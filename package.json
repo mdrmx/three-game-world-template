@@ -1,6 +1,8 @@
 {
   "dependencies": {
+    "@enable3d/ammo-physics": "^0.26.1",
     "enable3d": "^0.26.1",
+    "matter-js": "^0.20.0",
     "three": "^0.182.0"
   },
   "devDependencies": {
