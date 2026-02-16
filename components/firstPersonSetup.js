@@ -1,12 +1,64 @@
 import * as THREE from "three";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 
+/**
+ * Orchestrates a first-person controller with optional physics support.
+ * Handles user input, ground sampling, and synchronisation between camera and physics body.
+ */
+
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const TEMP_FORWARD = new THREE.Vector3();
 const TEMP_RIGHT = new THREE.Vector3();
 const DESIRED_DIRECTION = new THREE.Vector3();
 const HORIZONTAL_VELOCITY = new THREE.Vector3();
 
+/**
+ * Produces a sample helper that wraps the terrain sampler with fallbacks.
+ * Guarantees a finite height value while tracking whether the sample came from real terrain data.
+ */
+function createGroundResolver(terrainSampler, terrainBounds, floorLevel) {
+  const fallbackHeight =
+    Number.isFinite(terrainBounds?.max) ? terrainBounds.max : floorLevel;
+
+  if (typeof terrainSampler !== "function") {
+    return {
+      fallbackHeight,
+      sample: () => ({ height: fallbackHeight, isTerrain: false }),
+    };
+  }
+
+  return {
+    fallbackHeight,
+    sample: (x, z) => {
+      const height = terrainSampler(x, z);
+      if (Number.isFinite(height)) {
+        return { height, isTerrain: true };
+      }
+      return { height: fallbackHeight, isTerrain: false };
+    },
+  };
+}
+
+/**
+ * Ensures pointer targets receive focus without scrolling the viewport.
+ */
+function focusPointerTarget(element) {
+  if (element instanceof HTMLElement) {
+    element.focus({ preventScroll: true });
+  }
+}
+
+/**
+ * Resets jump-related transient state to avoid stale impulses.
+ */
+function resetJumpState(movement) {
+  movement.pendingJump = false;
+  movement.jumpBoost = false;
+}
+
+/**
+ * Generates a bilinear sampler over the supplied height grid so movement can query terrain elevation.
+ */
 function createTerrainSampler(data) {
   if (!data || !Array.isArray(data.grid)) {
     return null;
@@ -49,6 +101,9 @@ function createTerrainSampler(data) {
   };
 }
 
+/**
+ * Baseline configuration for player movement and capsule characteristics.
+ */
 const DEFAULT_CONFIG = {
   floorLevel: 0,
   playerHeight: 1.6,
@@ -61,6 +116,9 @@ const DEFAULT_CONFIG = {
   capsuleMass: 80,
 };
 
+/**
+ * Renders a lightweight DOM hint prompting the user to engage pointer lock.
+ */
 function buildPointerHint() {
   const element = document.createElement("div");
   element.textContent =
@@ -86,6 +144,9 @@ function buildPointerHint() {
   };
 }
 
+/**
+ * Constructs the mutable movement state used by both physics and kinematic updates.
+ */
 function initializeMovementState() {
   return {
     moveState: {
@@ -104,6 +165,9 @@ function initializeMovementState() {
   };
 }
 
+/**
+ * Maps keyboard events onto the movement state while capturing jump intents.
+ */
 function createInputHandler(movement) {
   return (event, isPressed) => {
     switch (event.code) {
@@ -145,6 +209,9 @@ function createInputHandler(movement) {
   };
 }
 
+/**
+ * Configures pointer-lock controls and returns an update loop to drive movement each frame.
+ */
 export async function firstPersonSetup(camera, renderer, options = {}) {
   const {
     physics: physicsWorld = null,
@@ -181,6 +248,11 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
       { ...derivedBounds, ...terrainBoundsOverride }
     : derivedBounds;
   const terrainSampler = terrainData ? createTerrainSampler(terrainData) : null;
+  const groundResolver = createGroundResolver(
+    terrainSampler,
+    terrainBounds,
+    config.floorLevel,
+  );
   const physicsEnabled = Boolean(usePhysics && physicsWorld?.add?.capsule);
 
   const pointerElement = renderer?.domElement || document.body;
@@ -208,14 +280,10 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
   const movement = initializeMovementState();
   const handleKey = createInputHandler(movement);
 
-  const initialGroundHeight =
-    terrainSampler ?
-      terrainSampler(camera.position.x, camera.position.z)
-    : terrainBounds.max;
-  const spawnGround =
-    Number.isFinite(initialGroundHeight) ? initialGroundHeight : (
-      (terrainBounds.max ?? config.floorLevel)
-    );
+  const spawnGround = groundResolver.sample(
+    camera.position.x,
+    camera.position.z,
+  ).height;
 
   const playerState = {
     capsule: null,
@@ -270,9 +338,7 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
 
   controls.addEventListener("lock", () => {
     pointerHint.style.display = "none";
-    if (pointerElement instanceof HTMLElement) {
-      pointerElement.focus({ preventScroll: true });
-    }
+    focusPointerTarget(pointerElement);
   });
 
   controls.addEventListener("unlock", () => {
@@ -281,28 +347,21 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
       movement.moveState[key] = false;
     });
     movement.velocity.set(0, 0, 0);
-    movement.pendingJump = false;
-    movement.jumpBoost = false;
-    const unlockedGround =
-      terrainSampler ?
-        terrainSampler(camera.position.x, camera.position.z)
-      : terrainBounds.max;
-    const groundedY =
-      Number.isFinite(unlockedGround) ? unlockedGround : (
-        (terrainBounds.max ?? config.floorLevel)
-      );
+    resetJumpState(movement);
+    const unlockedGround = groundResolver.sample(
+      camera.position.x,
+      camera.position.z,
+    ).height;
     setCameraPosition(
       camera.position.x,
-      groundedY + config.playerHeight,
+      unlockedGround + config.playerHeight,
       camera.position.z,
     );
     movement.isGrounded = true;
   });
 
   pointerElement.addEventListener("click", () => {
-    if (pointerElement instanceof HTMLElement) {
-      pointerElement.focus({ preventScroll: true });
-    }
+    focusPointerTarget(pointerElement);
     if (!controls.isLocked) controls.lock();
   });
 
@@ -326,17 +385,21 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
     camera.position.z,
   );
 
+  /**
+   * Physics-mode loop, applying input-derived velocity to the capsule and
+   * reconciling the camera with terrain or rigid-body feedback.
+   */
   function updatePhysicsMovement(delta, isActive) {
     if (!playerState.capsule?.body) {
       if (terrainSampler) {
-        const fallbackGround = terrainSampler(
+        const sampledGround = groundResolver.sample(
           camera.position.x,
           camera.position.z,
         );
-        if (Number.isFinite(fallbackGround)) {
+        if (sampledGround.isTerrain) {
           setCameraPosition(
             camera.position.x,
-            fallbackGround + config.playerHeight,
+            sampledGround.height + config.playerHeight,
             camera.position.z,
           );
         }
@@ -377,6 +440,7 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
           movement.isGrounded ? 1 : playerState.airControl;
         DESIRED_DIRECTION.multiplyScalar(targetSpeed * groundedMultiplier);
 
+        // Smoothly approach the target horizontal velocity using exponential damping.
         const blend = THREE.MathUtils.clamp(
           1 - Math.exp(-playerState.dampingStrength * delta),
           0,
@@ -391,24 +455,21 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
 
       if (movement.pendingJump && movement.isGrounded) {
         verticalVelocity = config.jumpSpeed;
-        movement.pendingJump = false;
-        movement.jumpBoost = false;
         movement.isGrounded = false;
-      } else {
-        movement.pendingJump = false;
       }
+      resetJumpState(movement);
     } else {
       movement.direction.set(0, 0, 0);
-      movement.pendingJump = false;
-      movement.jumpBoost = false;
+      resetJumpState(movement);
       HORIZONTAL_VELOCITY.set(0, 0, 0);
     }
 
     const capsulePosition = playerState.capsule.position;
-    const groundHeight =
-      terrainSampler ?
-        terrainSampler(capsulePosition.x, capsulePosition.z)
-      : null;
+    const terrainSample = groundResolver.sample(
+      capsulePosition.x,
+      capsulePosition.z,
+    );
+    const groundHeight = terrainSample.isTerrain ? terrainSample.height : null;
 
     let groundedFromHeight = false;
     if (
@@ -417,6 +478,7 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
     ) {
       const targetCenterY = groundHeight + playerState.capsuleHalfHeight;
       const centerDelta = targetCenterY - capsulePosition.y;
+      // Pull the capsule toward the terrain sample so the camera hugs the surface.
       const correctionSpeed = THREE.MathUtils.clamp(
         centerDelta / Math.max(delta, 0.016),
         -10,
@@ -461,10 +523,14 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
     movement.isGrounded = groundedFromHeight || groundedFromImpacts;
   }
 
+  /**
+   * Kinematic fallback when physics is disabled, integrating velocity manually.
+   */
   function updateKinematicMovement(delta) {
     movement.velocity.x -= movement.velocity.x * config.movementDamping * delta;
     movement.velocity.z -= movement.velocity.z * config.movementDamping * delta;
 
+    // Derive desired input direction from key states and normalise for consistent speed.
     movement.direction.z =
       Number(movement.moveState.forward) - Number(movement.moveState.backward);
     movement.direction.x =
@@ -490,9 +556,9 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
         movement.velocity.z -= config.walkAcceleration * 0.1;
       }
     }
-    movement.pendingJump = false;
-    movement.jumpBoost = false;
+    resetJumpState(movement);
 
+    // Apply gravity after handling jump impulses.
     movement.velocity.y -= config.gravity * delta;
 
     controls.moveRight(-movement.velocity.x * delta);
@@ -555,6 +621,7 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
       } else {
         movement.velocity.set(0, 0, 0);
         movement.direction.set(0, 0, 0);
+        resetJumpState(movement);
       }
     },
     get isGrounded() {

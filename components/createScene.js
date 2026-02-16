@@ -9,7 +9,7 @@ export async function createScene() {
     75,
     window.innerWidth / window.innerHeight,
     0.01,
-    1000,
+    300,
   );
 
   scene.add(camera);
