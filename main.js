@@ -5,27 +5,23 @@ import { loadModel } from "./components/modelLoader.js";
 import { firstPersonSetup } from "./components/firstPersonSetup.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 // physics
-import { AmmoPhysics, PhysicsLoader } from "@enable3d/ammo-physics";
+// Removed Ammo physics imports
 
 let scene;
 let camera;
 let renderer;
-let physics;
 let player;
+let terrainData;
+let PLAYER_HEIGHT;
 const models = [];
 const clock = new THREE.Clock();
 
-const USE_PLAYER_PHYSICS = false; // Toggle to compare physics-driven vs kinematic control
 const DEBUG_LOG_MOVEMENT = false; // Emits delta and velocity diagnostics when physics is off
 
-PhysicsLoader("/ammo", () => init());
+init();
 
 async function init() {
   ({ scene, camera, renderer } = await createScene());
-
-  if (USE_PLAYER_PHYSICS) {
-    physics = new AmmoPhysics(scene, { gravity: { y: -9.8 } });
-  }
 
   const hdrPath = "textures/hdr/sky2.hdr"; //HDRI for sky background and environment lighting
   const texturePaths = {
@@ -37,28 +33,23 @@ async function init() {
     roughnessMap: "textures/floor/rocks_rough.jpg",
   };
 
-  const { heightBounds, terrainData } = await createEnvironment(
-    scene,
-    hdrPath,
-    texturePaths,
-    physics,
-    {
+  const { heightBounds, terrainData: terrainDataLocal } =
+    await createEnvironment(scene, hdrPath, texturePaths, {
       planeSize: 600,
       segments: 32,
       heightScale: 20,
       heightBias: -10,
-      physicsFriction: 1.1,
-      physicsRestitution: 0.05,
-    },
-  );
+    });
 
   //set up first-person controls and constant for player movement and physics
   const FLOOR_LEVEL = 0;
-  const PLAYER_HEIGHT = 1.6;
+  PLAYER_HEIGHT = 1.6;
   const JUMP_SPEED = 20;
   const WALK_ACCELERATION = 100; //base ground thrust while walking
   const SPRINT_ACCELERATION = 450; //extra thrust when sprint modifier is held
   const MOVEMENT_DAMPING = 20; //air-resistance style decay applied every frame
+
+  terrainData = heightBounds && terrainDataLocal ? terrainDataLocal : null;
 
   player = await firstPersonSetup(camera, renderer, {
     floorLevel: FLOOR_LEVEL,
@@ -68,15 +59,8 @@ async function init() {
     sprintAcceleration: SPRINT_ACCELERATION,
     movementDamping: MOVEMENT_DAMPING,
     jumpSpeed: JUMP_SPEED,
-    physics,
-    walkSpeed: WALK_ACCELERATION * 0.05,
-    sprintSpeed: SPRINT_ACCELERATION * 0.05,
-    capsuleRadius: 0.45,
-    capsuleMass: 90,
-    airControl: 0.25,
     terrainBounds: heightBounds,
     terrainData,
-    usePhysics: USE_PLAYER_PHYSICS,
   });
 
   camera.position.y = FLOOR_LEVEL + PLAYER_HEIGHT; //set camera height to average human eye level for better first-person experience
@@ -110,15 +94,15 @@ async function init() {
     }
     models.push({ name, model, mixer, activeAction });
   }
+  models[0].model.position.set(0, 0, -10);
+
+  models[1].model.position.set(0, 0, 10);
 
   renderer.setAnimationLoop(animate);
 }
 
 function animate() {
   const delta = clock.getDelta();
-  if (physics && USE_PLAYER_PHYSICS) {
-    physics.update(delta * 1000); //keep physics world in sync with render loop
-  }
 
   for (const model of models) {
     if (model.mixer) model.mixer.update(delta);
@@ -126,18 +110,11 @@ function animate() {
 
   if (player) {
     player.update(delta);
-    if (DEBUG_LOG_MOVEMENT && !USE_PLAYER_PHYSICS) {
-      const velocity = player.velocity;
-      const speed = velocity.length();
-      console.log("[movement-debug]", {
-        delta: Number(delta.toFixed(4)),
-        speed: Number(speed.toFixed(4)),
-        velocity: {
-          x: Number(velocity.x.toFixed(4)),
-          y: Number(velocity.y.toFixed(4)),
-          z: Number(velocity.z.toFixed(4)),
-        },
-      });
+    if (typeof player.keepOnTerrain === "function") {
+      player.keepOnTerrain(terrainData, PLAYER_HEIGHT);
+    }
+    if (DEBUG_LOG_MOVEMENT && typeof player.logMovement === "function") {
+      player.logMovement(delta);
     }
   }
 

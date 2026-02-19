@@ -6,12 +6,6 @@ import { PointerLockControls } from "three/examples/jsm/controls/PointerLockCont
  * Handles user input, ground sampling, and synchronisation between camera and physics body.
  */
 
-const WORLD_UP = new THREE.Vector3(0, 1, 0);
-const TEMP_FORWARD = new THREE.Vector3();
-const TEMP_RIGHT = new THREE.Vector3();
-const DESIRED_DIRECTION = new THREE.Vector3();
-const HORIZONTAL_VELOCITY = new THREE.Vector3();
-
 /**
  * Produces a sample helper that wraps the terrain sampler with fallbacks.
  * Guarantees a finite height value while tracking whether the sample came from real terrain data.
@@ -214,25 +208,14 @@ function createInputHandler(movement) {
  */
 export async function firstPersonSetup(camera, renderer, options = {}) {
   const {
-    physics: physicsWorld = null,
-    usePhysics = true,
-    walkSpeed: overrideWalkSpeed,
-    sprintSpeed: overrideSprintSpeed,
-    capsuleRadius: overrideCapsuleRadius,
-    capsuleMass: overrideCapsuleMass,
-    airControl = 0.3,
-    horizontalDamping,
     terrainBounds: terrainBoundsOverride = null,
     terrainData = null,
-    ...restOptions
+    dynamicCapsule = null,
+    capsuleOffset = { x: 0, y: 0, z: 0 },
+    ...configOverrides
   } = options;
 
-  const config = { ...DEFAULT_CONFIG, ...restOptions };
-  const walkSpeed = overrideWalkSpeed ?? config.walkAcceleration * 0.05;
-  const sprintSpeed = overrideSprintSpeed ?? config.sprintAcceleration * 0.05;
-  const capsuleRadius = overrideCapsuleRadius ?? config.capsuleRadius;
-  const capsuleMass = overrideCapsuleMass ?? config.capsuleMass;
-  const dampingStrength = horizontalDamping ?? config.movementDamping;
+  const config = { ...DEFAULT_CONFIG, ...configOverrides };
   const derivedBounds =
     terrainData ?
       {
@@ -253,7 +236,6 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
     terrainBounds,
     config.floorLevel,
   );
-  const physicsEnabled = Boolean(usePhysics && physicsWorld?.add?.capsule);
 
   const pointerElement = renderer?.domElement || document.body;
   if (pointerElement instanceof HTMLElement) {
@@ -273,6 +255,13 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
   const setCameraPosition = (x, y, z) => {
     controlsObject.position.set(x, y, z);
     camera.position.set(x, y, z);
+    if (dynamicCapsule && dynamicCapsule.position) {
+      dynamicCapsule.position.set(
+        x + capsuleOffset.x,
+        y + capsuleOffset.y,
+        z + capsuleOffset.z,
+      );
+    }
   };
 
   const { element: pointerHint } = buildPointerHint();
@@ -284,57 +273,6 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
     camera.position.x,
     camera.position.z,
   ).height;
-
-  const playerState = {
-    capsule: null,
-    cameraOffset: config.playerHeight,
-    walkSpeed,
-    sprintSpeed,
-    airControl,
-    dampingStrength,
-    terrainSampler,
-    capsuleHalfHeight: null,
-    usingPhysics: false,
-  };
-
-  if (physicsEnabled) {
-    const capsuleHeight = Math.max(
-      config.playerHeight - capsuleRadius * 2,
-      0.2,
-    );
-    const totalHeight = capsuleHeight + capsuleRadius * 2;
-    const safeSpawnOffset = Math.max(capsuleRadius, 0.3);
-    const startY = spawnGround + totalHeight / 2 + safeSpawnOffset;
-    const capsule = physicsWorld.add.capsule(
-      {
-        name: "playerCollider",
-        radius: capsuleRadius,
-        height: capsuleHeight,
-        mass: capsuleMass,
-        x: camera.position.x,
-        y: startY,
-        z: camera.position.z,
-      },
-      { basic: { transparent: true, opacity: 0 } },
-    );
-    if (capsule) {
-      capsule.visible = false;
-      if (capsule.body) {
-        capsule.body.setAngularFactor(0, 0, 0);
-        capsule.body.setFriction(0.8);
-        capsule.body.setDamping(dampingStrength * 0.05, dampingStrength * 0.05);
-        capsule.body.setCcdMotionThreshold(0.01);
-        capsule.body.setCcdSweptSphereRadius(capsuleRadius * 0.5);
-      }
-      playerState.capsule = capsule;
-      playerState.cameraOffset = Math.max(
-        config.playerHeight - totalHeight / 2,
-        0,
-      );
-      playerState.capsuleHalfHeight = totalHeight / 2;
-      playerState.usingPhysics = true;
-    }
-  }
 
   controls.addEventListener("lock", () => {
     pointerHint.style.display = "none";
@@ -384,144 +322,6 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
     spawnGround + config.playerHeight,
     camera.position.z,
   );
-
-  /**
-   * Physics-mode loop, applying input-derived velocity to the capsule and
-   * reconciling the camera with terrain or rigid-body feedback.
-   */
-  function updatePhysicsMovement(delta, isActive) {
-    if (!playerState.capsule?.body) {
-      if (terrainSampler) {
-        const sampledGround = groundResolver.sample(
-          camera.position.x,
-          camera.position.z,
-        );
-        if (sampledGround.isTerrain) {
-          setCameraPosition(
-            camera.position.x,
-            sampledGround.height + config.playerHeight,
-            camera.position.z,
-          );
-        }
-      }
-      return;
-    }
-
-    const body = playerState.capsule.body;
-    const currentVelocity = body.velocity;
-    HORIZONTAL_VELOCITY.set(currentVelocity.x, 0, currentVelocity.z);
-    let verticalVelocity = currentVelocity.y;
-
-    if (isActive) {
-      TEMP_FORWARD.set(0, 0, -1).applyQuaternion(camera.quaternion);
-      TEMP_FORWARD.y = 0;
-      if (TEMP_FORWARD.lengthSq() > 0.0001) {
-        TEMP_FORWARD.normalize();
-      } else {
-        TEMP_FORWARD.set(0, 0, -1);
-      }
-
-      TEMP_RIGHT.copy(TEMP_FORWARD).cross(WORLD_UP).normalize();
-
-      DESIRED_DIRECTION.set(0, 0, 0);
-      if (movement.moveState.forward) DESIRED_DIRECTION.add(TEMP_FORWARD);
-      if (movement.moveState.backward) DESIRED_DIRECTION.sub(TEMP_FORWARD);
-      if (movement.moveState.right) DESIRED_DIRECTION.add(TEMP_RIGHT);
-      if (movement.moveState.left) DESIRED_DIRECTION.sub(TEMP_RIGHT);
-
-      if (DESIRED_DIRECTION.lengthSq() > 0) {
-        DESIRED_DIRECTION.normalize();
-        movement.direction.copy(DESIRED_DIRECTION);
-        const targetSpeed =
-          movement.moveState.sprint ?
-            playerState.sprintSpeed
-          : playerState.walkSpeed;
-        const groundedMultiplier =
-          movement.isGrounded ? 1 : playerState.airControl;
-        DESIRED_DIRECTION.multiplyScalar(targetSpeed * groundedMultiplier);
-
-        // Smoothly approach the target horizontal velocity using exponential damping.
-        const blend = THREE.MathUtils.clamp(
-          1 - Math.exp(-playerState.dampingStrength * delta),
-          0,
-          1,
-        );
-        HORIZONTAL_VELOCITY.lerp(DESIRED_DIRECTION, blend);
-      } else {
-        movement.direction.set(0, 0, 0);
-        const damping = Math.exp(-playerState.dampingStrength * delta);
-        HORIZONTAL_VELOCITY.multiplyScalar(damping);
-      }
-
-      if (movement.pendingJump && movement.isGrounded) {
-        verticalVelocity = config.jumpSpeed;
-        movement.isGrounded = false;
-      }
-      resetJumpState(movement);
-    } else {
-      movement.direction.set(0, 0, 0);
-      resetJumpState(movement);
-      HORIZONTAL_VELOCITY.set(0, 0, 0);
-    }
-
-    const capsulePosition = playerState.capsule.position;
-    const terrainSample = groundResolver.sample(
-      capsulePosition.x,
-      capsulePosition.z,
-    );
-    const groundHeight = terrainSample.isTerrain ? terrainSample.height : null;
-
-    let groundedFromHeight = false;
-    if (
-      Number.isFinite(groundHeight) &&
-      Number.isFinite(playerState.capsuleHalfHeight)
-    ) {
-      const targetCenterY = groundHeight + playerState.capsuleHalfHeight;
-      const centerDelta = targetCenterY - capsulePosition.y;
-      // Pull the capsule toward the terrain sample so the camera hugs the surface.
-      const correctionSpeed = THREE.MathUtils.clamp(
-        centerDelta / Math.max(delta, 0.016),
-        -10,
-        10,
-      );
-      if (Math.abs(centerDelta) > 0.02) {
-        verticalVelocity += correctionSpeed;
-      }
-      groundedFromHeight =
-        Math.abs(centerDelta) < 0.15 && Math.abs(verticalVelocity) <= 0.2;
-      setCameraPosition(
-        capsulePosition.x,
-        groundHeight + config.playerHeight,
-        capsulePosition.z,
-      );
-    } else {
-      setCameraPosition(
-        capsulePosition.x,
-        capsulePosition.y + playerState.cameraOffset,
-        capsulePosition.z,
-      );
-    }
-
-    body.setVelocityX(HORIZONTAL_VELOCITY.x);
-    body.setVelocityZ(HORIZONTAL_VELOCITY.z);
-    body.setVelocityY(verticalVelocity);
-    if (body.ammo && typeof body.ammo.activate === "function") {
-      body.ammo.activate(true);
-    }
-
-    const impacts = body.impact || [];
-    const groundedFromImpacts = impacts.some(
-      (impact) => impact?.normal && impact.normal.y > 0.5,
-    );
-
-    const updatedVelocity = body.velocity;
-    movement.velocity.set(
-      updatedVelocity.x,
-      updatedVelocity.y,
-      updatedVelocity.z,
-    );
-    movement.isGrounded = groundedFromHeight || groundedFromImpacts;
-  }
 
   /**
    * Kinematic fallback when physics is disabled, integrating velocity manually.
@@ -607,16 +407,14 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
     }
   }
 
-  return {
+  const player = {
     controls,
     moveState: movement.moveState,
     velocity: movement.velocity,
     direction: movement.direction,
     update(delta) {
       const isActive = controls.isLocked;
-      if (playerState.usingPhysics && playerState.capsule) {
-        updatePhysicsMovement(delta, isActive);
-      } else if (isActive) {
+      if (isActive) {
         updateKinematicMovement(delta);
       } else {
         movement.velocity.set(0, 0, 0);
@@ -631,9 +429,50 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
       movement.isGrounded = value;
     },
     config,
-    collider: playerState.capsule,
+    collider: null,
     get usingPhysics() {
-      return playerState.usingPhysics;
+      return false;
     },
   };
+
+  // Attach keepOnTerrain method
+  player.keepOnTerrain = function (terrainData, playerHeight) {
+    if (this.position && terrainData) {
+      const x = this.position.x;
+      const z = this.position.z;
+      let terrainY = 0;
+      if (typeof terrainData === "function") {
+        terrainY = terrainData(x, z);
+      } else if (Array.isArray(terrainData)) {
+        // Fallback: no grid info, assume square
+        const size = Math.sqrt(terrainData.length);
+        const idx = Math.floor(z) * size + Math.floor(x);
+        terrainY = terrainData[idx] || 0;
+      } else if (terrainData && terrainData.grid && terrainData.cols) {
+        // Proper grid object from createEnvironment
+        const col = Math.floor(x);
+        const row = Math.floor(z);
+        const idx = row * terrainData.cols + col;
+        terrainY = terrainData.grid[idx] || 0;
+      }
+      this.position.y = Math.max(this.position.y, terrainY + playerHeight);
+    }
+  };
+
+  // Attach logMovement method
+  player.logMovement = function (delta) {
+    const velocity = this.velocity;
+    const speed = velocity.length();
+    console.log("[movement-debug]", {
+      delta: Number(delta.toFixed(4)),
+      speed: Number(speed.toFixed(4)),
+      velocity: {
+        x: Number(velocity.x.toFixed(4)),
+        y: Number(velocity.y.toFixed(4)),
+        z: Number(velocity.z.toFixed(4)),
+      },
+    });
+  };
+
+  return player;
 }

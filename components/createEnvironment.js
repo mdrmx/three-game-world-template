@@ -5,7 +5,6 @@ export async function createEnvironment(
   scene,
   hdrPath,
   floorTextures = {},
-  physics = null,
   options = {},
 ) {
   new HDRLoader().load(hdrPath, (texture) => {
@@ -35,10 +34,6 @@ export async function createEnvironment(
     segments = 128,
     heightScale = 10,
     heightBias = -5,
-    physicsShape = "concaveMesh",
-    physicsMargin = 0.05,
-    physicsFriction = 1,
-    physicsRestitution = 0,
   } = options || {};
 
   const repeat = textureRepeat ?? textureConfig?.repeat ?? 60;
@@ -147,30 +142,7 @@ export async function createEnvironment(
   mesh.rotation.set(Math.PI / -2, 0, 0);
   scene.add(mesh);
 
-  if (physics) {
-    const basePhysicsConfig = {
-      mass: 0,
-      collisionFlags: 1,
-      margin: physicsMargin,
-    };
-
-    const shapeType =
-      physicsShape === "heightfield" ? "concaveMesh" : physicsShape;
-    if (physicsShape === "heightfield") {
-      console.warn(
-        "Heightfield physics shape is not supported via add.existing; falling back to concaveMesh.",
-      );
-    }
-
-    physics.add.existing(mesh, {
-      ...basePhysicsConfig,
-      shape: shapeType,
-    });
-    if (mesh.body) {
-      mesh.body.setFriction(physicsFriction);
-      mesh.body.setRestitution(physicsRestitution);
-    }
-  }
+  // Physics code removed
 
   return { floor: mesh, heightBounds, terrainData };
 }
