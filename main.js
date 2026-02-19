@@ -1,56 +1,67 @@
+// Main entry for 3D scene setup and animation loop
 import * as THREE from "three";
-import { createEnvironment } from "./components/createEnvironment.js";
-import { createScene } from "./components/createScene.js";
-import { loadModel } from "./components/modelLoader.js";
-import { firstPersonSetup } from "./components/firstPersonSetup.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-// physics
-// Removed Ammo physics imports
+import { createEnvironment } from "./components/createEnvironment.js"; // Terrain/environment
+import { createScene } from "./components/createScene.js"; // Scene/camera/renderer
+import { loadModel } from "./components/modelLoader.js"; // GLTF model loader
+import { firstPersonSetup } from "./components/firstPersonSetup.js"; // First-person controls
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"; // Three.js GLTF loader
 
+// Scene globals
 let scene;
 let camera;
 let renderer;
 let player;
 let terrainData;
 let PLAYER_HEIGHT;
-const models = [];
-const clock = new THREE.Clock();
+const models = []; // Array of loaded models
 
+const clock = new THREE.Clock(); // Animation clock
+
+// Toggle for movement debug logging
 const DEBUG_LOG_MOVEMENT = false; // Emits delta and velocity diagnostics when physics is off
 
+// Start the app
 init();
 
 async function init() {
+  // Create scene, camera, renderer
   ({ scene, camera, renderer } = await createScene());
 
-  const hdrPath = "textures/hdr/sky2.hdr"; //HDRI for sky background and environment lighting
+  // Set up environment textures and terrain
+  const hdrPath = "textures/hdr/sky2.hdr"; // HDRI for sky background and lighting
+  const texName = "rocks"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
   const texturePaths = {
-    diffuseMap: "textures/floor/rocks_diff.jpg",
-    aoMap: "textures/floor/rocks_ao.jpg",
-    armMap: "textures/floor/rocks_arm.jpg",
-    normalMap: "textures/floor/rocks_nor.jpg",
-    displacementMap: "textures/floor/rocks_disp.jpg",
-    roughnessMap: "textures/floor/rocks_rough.jpg",
+    diffuseMap: `textures/floor/${texName}/${texName}_diff.jpg`,
+    aoMap: `textures/floor/${texName}/${texName}_ao.jpg`,
+    armMap: `textures/floor/${texName}/${texName}_arm.jpg`,
+    normalMap: `textures/floor/${texName}/${texName}_nor.jpg`,
+    displacementMap: `textures/floor/${texName}/${texName}_disp.jpg`,
+    roughnessMap: `textures/floor/${texName}/${texName}_rough.jpg`,
   };
+  // const texturePaths = "textures/floor/rocks_diff.jpg";
 
+  // Generate terrain and get height data
   const { heightBounds, terrainData: terrainDataLocal } =
     await createEnvironment(scene, hdrPath, texturePaths, {
-      planeSize: 600,
-      segments: 32,
-      heightScale: 20,
-      heightBias: -10,
+      textureRepeat: 30, // Tiling of floor textures
+      planeSize: 500, // Size of terrain
+      segments: 24, // Grid resolution
+      heightScale: 15, // Vertical exaggeration of terrain
+      heightBias: -10, // Vertical offset of terrain from y=0 plane
     });
 
-  //set up first-person controls and constant for player movement and physics
+  // Player/physics constants
   const FLOOR_LEVEL = 0;
   PLAYER_HEIGHT = 1.6;
   const JUMP_SPEED = 20;
-  const WALK_ACCELERATION = 100; //base ground thrust while walking
-  const SPRINT_ACCELERATION = 450; //extra thrust when sprint modifier is held
-  const MOVEMENT_DAMPING = 20; //air-resistance style decay applied every frame
+  const WALK_ACCELERATION = 100; // Base ground thrust while walking
+  const SPRINT_ACCELERATION = 450; // Extra thrust when sprinting
+  const MOVEMENT_DAMPING = 20; // Air-resistance style decay
 
+  // Store terrain data for use in animation loop
   terrainData = heightBounds && terrainDataLocal ? terrainDataLocal : null;
 
+  // Set up first-person player controls
   player = await firstPersonSetup(camera, renderer, {
     floorLevel: FLOOR_LEVEL,
     playerHeight: PLAYER_HEIGHT,
@@ -63,62 +74,66 @@ async function init() {
     terrainData,
   });
 
-  camera.position.y = FLOOR_LEVEL + PLAYER_HEIGHT; //set camera height to average human eye level for better first-person experience
-
-  //make canvas responsive to window resizing
+  // Responsive canvas: update on window resize
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  //////////////import object + animation config///////////////
+  // Load animated models and add to scene
   const loader = new GLTFLoader();
   const modelNames = ["hut", "house"];
-  const ANIMATION_PLAYBACK_RATE = 0.5; // 1 preserves source speed; lower slows animation
+  const ANIMATION_PLAYBACK_RATE = 0.5; // 1 = source speed, <1 = slower
 
   for (const name of modelNames) {
     const pathtoModel = `public/models/${name}.glb`;
-    const randX = Math.random() * 100 - 50;
+    // Place models at random X/Z positions
+    const randX = Math.random() * 200 - 50;
     const randZ = Math.random() * 100 - 50;
     const position = new THREE.Vector3(randX, 5, randZ);
     const { model, mixer, activeAction } = await loadModel(
       loader,
       pathtoModel,
+      22,
       position,
       scene,
-      camera,
     );
     if (mixer && activeAction) {
       activeAction.setEffectiveTimeScale(ANIMATION_PLAYBACK_RATE);
     }
     models.push({ name, model, mixer, activeAction });
   }
-  models[0].model.position.set(0, 0, -10);
+  // Place huts/houses at fixed Z for demo
+  models[0].model.position.set(0, 0.3, -10);
+  models[1].model.position.set(10, -2, 10);
 
-  models[1].model.position.set(0, 0, 10);
-
+  // Start animation loop
   renderer.setAnimationLoop(animate);
 }
 
+// Main animation loop: updates models, player, and renders scene
 function animate() {
-  const delta = clock.getDelta();
+  const delta = clock.getDelta(); // Time since last frame
 
+  // Update all animated models
   for (const model of models) {
     if (model.mixer) model.mixer.update(delta);
   }
 
+  // Update player controls and keep player on terrain
   if (player) {
     player.update(delta);
     if (typeof player.keepOnTerrain === "function") {
       player.keepOnTerrain(terrainData, PLAYER_HEIGHT);
     }
+    // Optionally log movement debug info
     if (DEBUG_LOG_MOVEMENT && typeof player.logMovement === "function") {
       player.logMovement(delta);
     }
   }
 
-  if (renderer && scene && camera) {
-    renderer.render(scene, camera);
-  }
+  // Render the scene
+
+  renderer.render(scene, camera);
 }

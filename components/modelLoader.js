@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-export async function loadModel(loader, url, position, scene, camera) {
+export async function loadModel(loader, url, modelSize, position, scene) {
   return new Promise((resolve, reject) => {
     const ANIMATION_PLAYBACK_RATE = 1.0;
 
@@ -28,38 +28,22 @@ export async function loadModel(loader, url, position, scene, camera) {
 
       model.rotation.set(0, Math.PI / 1.2, 0);
 
+      // Compute the bounding box of the model
       const bounds = new THREE.Box3().setFromObject(model);
       const size = bounds.getSize(new THREE.Vector3());
-      const maxAxis = Math.max(size.x, size.y, size.z);
+      const maxAxis = Math.max(size.x, size.y, size.z); // Largest dimension
 
+      // Uniformly scale the model so its largest axis matches targetSize
       if (maxAxis > 0) {
-        const targetSize = 22;
-        const scaleFactor = targetSize / maxAxis;
-        model.scale.multiplyScalar(scaleFactor);
-        model.updateWorldMatrix(true, true);
-        bounds.setFromObject(model);
+        const targetSize = modelSize; // Desired max size for any axis
+        const scaleFactor = targetSize / maxAxis; // Calculate the scale factor to resize the model so its largest dimension matches targetSize
+        model.scale.multiplyScalar(scaleFactor); // Apply the scale factor uniformly to the model
+        model.updateWorldMatrix(true, true); // Update transforms after scaling
+        bounds.setFromObject(model); // Recompute bounds after scaling
         bounds.getSize(size);
       } else {
+        // If model has no size, just update its world matrix
         model.updateWorldMatrix(true, true);
-      }
-
-      // Center the model and update camera frustum so the asset appears correctly
-      const worldCenter = bounds.getCenter(new THREE.Vector3());
-      model.userData.boundingCenter = model.worldToLocal(worldCenter.clone());
-
-      const maxSize = Math.max(size.x, size.y, size.z);
-      const safeMaxSize = Math.max(maxSize, 0.0001);
-      const halfSize = safeMaxSize * 0.5;
-      const distance =
-        halfSize / Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
-      const viewOffset = new THREE.Vector3(0, halfSize * 1.5, distance * 1.25);
-
-      const desiredNear = Math.max(0.0001, Math.min(1, halfSize * 0.01));
-      const desiredFar = Math.max(camera.far, distance * 10);
-      if (camera.near !== desiredNear || camera.far !== desiredFar) {
-        camera.near = desiredNear;
-        camera.far = desiredFar;
-        camera.updateProjectionMatrix();
       }
 
       if (gltf.animations && gltf.animations.length > 0) {

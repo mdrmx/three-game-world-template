@@ -1,18 +1,20 @@
+// Environment/terrain setup for 3D scene
 import * as THREE from "three";
 import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
-
 export async function createEnvironment(
   scene,
   hdrPath,
   floorTextures = {},
   options = {},
 ) {
+  // Load HDRI for sky/environment lighting
   new HDRLoader().load(hdrPath, (texture) => {
     texture.mapping = THREE.EquirectangularReflectionMapping;
     scene.background = texture;
     scene.environment = texture;
   });
 
+  // Prepare texture loader and config
   const textureLoader = new THREE.TextureLoader();
   const textureConfig =
     typeof floorTextures === "string" ?
@@ -36,8 +38,10 @@ export async function createEnvironment(
     heightBias = -5,
   } = options || {};
 
-  const repeat = textureRepeat ?? textureConfig?.repeat ?? 60;
+  // How many times to repeat the floor textures
+  const repeat = textureRepeat || 60;
 
+  // Helper to load and configure a texture
   const loadTexture = async (path, { isColor = false } = {}) => {
     if (!path) {
       return null;
@@ -52,6 +56,7 @@ export async function createEnvironment(
     return tex;
   };
 
+  // Load all relevant textures in parallel
   const [
     baseTexture,
     aoTexture,
@@ -68,12 +73,14 @@ export async function createEnvironment(
     loadTexture(roughnessMap),
   ]);
 
+  // Create the terrain geometry (plane)
   const plane = new THREE.PlaneGeometry(
     planeSize,
     planeSize,
     segments,
     segments,
   );
+  // Duplicate UVs to uv2 for AO/lightmap support
   if (plane.attributes.uv) {
     plane.setAttribute(
       "uv2",
@@ -81,10 +88,12 @@ export async function createEnvironment(
     );
   }
 
+  // Heightmap/terrain data
   let heightInfo = null;
   let heightBounds = { min: 0, max: 0 };
   let terrainData = null;
 
+  // If a displacement (height) texture is provided, extract height data
   if (displacementTexture) {
     heightInfo = extractHeightData(
       plane,
@@ -99,6 +108,7 @@ export async function createEnvironment(
     }
   }
 
+  // Build terrainData grid for sampling heights in gameplay
   if (heightInfo) {
     const geometryParams = plane.parameters || {};
     const width = geometryParams.width ?? planeSize;
@@ -120,6 +130,7 @@ export async function createEnvironment(
     };
   }
 
+  // Set up material with all loaded textures
   const materialParams = {
     map: baseTexture || undefined,
     aoMap: aoTexture || undefined,
@@ -135,6 +146,7 @@ export async function createEnvironment(
     materialParams.aoMap = materialParams.aoMap || armTexture;
   }
 
+  // Create mesh and add to scene
   const mat = new THREE.MeshStandardMaterial(materialParams);
 
   const mesh = new THREE.Mesh(plane, mat);
@@ -144,15 +156,18 @@ export async function createEnvironment(
 
   // Physics code removed
 
+  // Return mesh and terrain data for use in scene
   return { floor: mesh, heightBounds, terrainData };
 }
 
+// Extracts height data from a displacement texture and geometry
 function extractHeightData(geometry, texture, repeat, scale, bias) {
   const image = texture?.image;
   if (!image) {
     return null;
   }
 
+  // Draw image to canvas to access pixel data
   const canvas = document.createElement("canvas");
   canvas.width = image.width;
   canvas.height = image.height;
@@ -163,6 +178,7 @@ function extractHeightData(geometry, texture, repeat, scale, bias) {
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
 
+  // Calculate grid size from geometry
   const { count } = geometry.attributes.position;
   const geometryParams = geometry.parameters || {};
   const widthSegments =
@@ -177,6 +193,7 @@ function extractHeightData(geometry, texture, repeat, scale, bias) {
     rows = Math.max(Math.round(count / cols), 1);
   }
 
+  // Fill heights and grid from pixel data
   const heights = new Float32Array(count);
   const grid = Array.from({ length: rows }, () => new Array(cols));
   let minHeight = Infinity;
@@ -184,6 +201,7 @@ function extractHeightData(geometry, texture, repeat, scale, bias) {
   const uvAttr = geometry.attributes.uv;
 
   for (let i = 0; i < count; i += 1) {
+    // Map UV to pixel, extract height, and store in grid
     const u = wrapUv((uvAttr.getX(i) * repeat) % 1);
     const v = wrapUv((uvAttr.getY(i) * repeat) % 1);
     const x = Math.floor(u * (canvas.width - 1));
@@ -201,6 +219,7 @@ function extractHeightData(geometry, texture, repeat, scale, bias) {
     if (mappedHeight > maxHeight) maxHeight = mappedHeight;
   }
 
+  // Validate height range
   if (!Number.isFinite(minHeight) || !Number.isFinite(maxHeight)) {
     return null;
   }
@@ -208,6 +227,7 @@ function extractHeightData(geometry, texture, repeat, scale, bias) {
   return { heights, grid, rows, cols, min: minHeight, max: maxHeight };
 }
 
+// Applies height values to the Z coordinate of geometry vertices
 function applyHeightsToGeometry(geometry, heights) {
   const position = geometry.attributes.position;
   for (let i = 0; i < position.count; i += 1) {
@@ -219,6 +239,7 @@ function applyHeightsToGeometry(geometry, heights) {
   geometry.computeBoundingSphere();
 }
 
+// Ensures UV coordinates are wrapped to [0,1]
 function wrapUv(value) {
   const wrapped = value % 1;
   return wrapped < 0 ? wrapped + 1 : wrapped;
