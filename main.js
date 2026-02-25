@@ -50,7 +50,7 @@ PhysicsLoader("/ammo", async () => {
   const models = [];
   const clock = new THREE.Clock();
 
-  const DEBUG_LOG_MOVEMENT = false; // Set to true to enable console logging of player movement data for debugging
+  const DEBUG_LOG_MOVEMENT = true; // Set to true to enable console logging of player movement data for debugging
 
   // Create scene, camera, renderer
   ({ scene, camera, renderer } = await createScene());
@@ -159,7 +159,11 @@ PhysicsLoader("/ammo", async () => {
     // Place models at random X/Z positions
     const randX = Math.random() * 200 - 50;
     const randZ = Math.random() * 100 - 50;
-    const position = new THREE.Vector3(randX, 5, randZ);
+    const position = new THREE.Vector3(randX, -1, randZ);
+    // Set mass: hut static, house dynamic (example)
+    let mass = 0;
+    if (name === "hut") mass = 0; // static
+    if (name === "house") mass = 0; // dynamic (default)
     const { model, mixer, activeAction, collider } = await loadModel(
       loader,
       pathtoModel,
@@ -167,6 +171,7 @@ PhysicsLoader("/ammo", async () => {
       position,
       scene,
       physics,
+      { mass },
     );
     if (mixer && activeAction) {
       activeAction.setEffectiveTimeScale(ANIMATION_PLAYBACK_RATE);

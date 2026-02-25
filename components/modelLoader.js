@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 // Optionally pass AmmoPhysics instance for physics bounding box
+// options: { mass: number } (optional)
 export async function loadModel(
   loader,
   url,
@@ -8,6 +9,7 @@ export async function loadModel(
   position,
   scene,
   physics = null,
+  options = {},
 ) {
   return new Promise((resolve, reject) => {
     const ANIMATION_PLAYBACK_RATE = 1.0;
@@ -57,6 +59,8 @@ export async function loadModel(
       model.rotation.set(0, Math.PI / 1.2, 0);
 
       if (physics) {
+        // Allow static or dynamic by mass option (default: dynamic)
+        const mass = typeof options.mass === "number" ? options.mass : 10;
         collider = physics.add.box(
           {
             width: size.x || 1,
@@ -65,7 +69,7 @@ export async function loadModel(
             x: colliderPosition.x,
             y: colliderPosition.y + (size.y || 1) / 2,
             z: colliderPosition.z,
-            mass: 10,
+            mass,
           },
           { lambert: { color: 0xff0000, transparent: true, opacity: 0 } },
         );
