@@ -20,34 +20,38 @@ export async function loadModel(
       console.log("hut model loaded:", gltf);
 
       // Compute the bounding box of the model
-      const bounds = new THREE.Box3().setFromObject(model);
-      const size = bounds.getSize(new THREE.Vector3());
+      let bounds = new THREE.Box3().setFromObject(model);
+      let size = bounds.getSize(new THREE.Vector3());
+      let center = bounds.getCenter(new THREE.Vector3());
       const maxAxis = Math.max(size.x, size.y, size.z); // Largest dimension
 
       // Uniformly scale the model so its largest axis matches targetSize
       if (maxAxis > 0) {
         const targetSize = modelSize; // Desired max size for any axis
-        const scaleFactor = targetSize / maxAxis; // Calculate the scale factor to resize the model so its largest dimension matches targetSize
-        model.scale.multiplyScalar(scaleFactor); // Apply the scale factor uniformly to the model
-        model.updateWorldMatrix(true, true); // Update transforms after scaling
-        bounds.setFromObject(model); // Recompute bounds after scaling
-        bounds.getSize(size);
-      } else {
-        // If model has no size, just update its world matrix
+        const scaleFactor = targetSize / maxAxis;
+        model.scale.multiplyScalar(scaleFactor);
         model.updateWorldMatrix(true, true);
+        // Recompute bounds and center after scaling
+        bounds = new THREE.Box3().setFromObject(model);
+        size = bounds.getSize(new THREE.Vector3());
+        center = bounds.getCenter(new THREE.Vector3());
+      } else {
+        model.updateWorldMatrix(true, true);
+        bounds = new THREE.Box3().setFromObject(model);
+        size = bounds.getSize(new THREE.Vector3());
+        center = bounds.getCenter(new THREE.Vector3());
       }
 
-      // Center model at bounding box center and reset its position
-      const center = bounds.getCenter(new THREE.Vector3());
-      model.position.sub(center); // Center model geometry at origin
+      // Center model geometry at origin (so collider wraps it)
+      model.position.sub(center);
 
-      // Always place collider at requested world position, model at (0, -halfHeight, 0) inside collider
+      // Place collider at requested world position, model at (0, -center.y, 0) inside collider
       let collider = null;
       let colliderPosition = new THREE.Vector3(12, -0.1, 0);
       if (position instanceof THREE.Vector3) {
         colliderPosition.copy(position);
       } else if (position) {
-        colliderPosition.set(position.x, position.y, position.z);
+        colliderPosition.set(position.x, -position.y * 3, position.z);
       }
 
       model.rotation.set(0, Math.PI / 1.2, 0);
@@ -56,7 +60,7 @@ export async function loadModel(
         collider = physics.add.box(
           {
             width: size.x || 1,
-            height: size.y || 1,
+            height: size.y / 4 || 1,
             depth: size.z || 1,
             x: colliderPosition.x,
             y: colliderPosition.y + (size.y || 1) / 2,
@@ -65,8 +69,8 @@ export async function loadModel(
           },
           { lambert: { color: 0xff0000, transparent: true, opacity: 0 } },
         );
-        // Always place model at (0, -halfHeight, 0) inside collider
-        model.position.set(0, -(size.y || 1) / 2, 0);
+        // Place model at (0, -center.y, 0) so its geometry origin matches collider center
+        model.position.set(0, -center.y, 0);
         collider.add(model);
         collider.position.set(
           colliderPosition.x,

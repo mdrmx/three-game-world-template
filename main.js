@@ -22,6 +22,7 @@ PhysicsLoader("/ammo", async () => {
     right: false,
     jump: false,
     canJump: true,
+    sprint: false,
   };
 
   // Keyboard controls for WASD + jump
@@ -30,6 +31,8 @@ PhysicsLoader("/ammo", async () => {
     if (e.code === "KeyS") movement.backward = true;
     if (e.code === "KeyA") movement.left = true;
     if (e.code === "KeyD") movement.right = true;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
+      movement.sprint = true;
     if (e.code === "Space" && movement.canJump) movement.jump = true;
   });
   window.addEventListener("keyup", (e) => {
@@ -37,6 +40,8 @@ PhysicsLoader("/ammo", async () => {
     if (e.code === "KeyS") movement.backward = false;
     if (e.code === "KeyA") movement.left = false;
     if (e.code === "KeyD") movement.right = false;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
+      movement.sprint = false;
     if (e.code === "Space") movement.jump = false;
   });
   // All code that uses Ammo/AmmoPhysics must be inside this callback!
@@ -168,9 +173,6 @@ PhysicsLoader("/ammo", async () => {
     }
     models.push({ name, model, mixer, activeAction, collider });
   }
-  // Place huts/houses at fixed Z for demo
-  models[0].model.position.set(0, 0.3, -10);
-  models[1].model.position.set(10, -2, 10);
 
   // Start animation loop
   renderer.setAnimationLoop(animate);
@@ -201,7 +203,9 @@ PhysicsLoader("/ammo", async () => {
 
       // Calculate desired velocity
       let velocity = new THREE.Vector3();
-      const speed = 8;
+      const walkSpeed = 8;
+      const sprintSpeed = 16;
+      const speed = movement.sprint ? sprintSpeed : walkSpeed;
       if (movement.forward) velocity.add(forward);
       if (movement.backward) velocity.sub(forward);
       if (movement.left) velocity.sub(right);
