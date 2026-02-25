@@ -57,7 +57,7 @@ PhysicsLoader("/ammo", async () => {
 
   // Set up physics
   const physics = new AmmoPhysics(scene);
-  physics.debug?.enable();
+  if (DEBUG_LOG_MOVEMENT) physics.debug?.enable();
 
   // Set up environment textures and terrain
   const hdrPath = "textures/hdr/sky2.hdr"; // HDRI for sky background and lighting
@@ -251,10 +251,6 @@ PhysicsLoader("/ammo", async () => {
       player.update(delta);
       if (typeof player.keepOnTerrain === "function") {
         player.keepOnTerrain(terrainData, PLAYER_HEIGHT);
-      }
-      // Optionally log movement debug info
-      if (DEBUG_LOG_MOVEMENT && typeof player.logMovement === "function") {
-        player.logMovement(delta);
       }
     }
 
