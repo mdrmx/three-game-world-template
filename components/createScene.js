@@ -21,9 +21,18 @@ export async function createScene() {
   renderer.outputEncoding = THREE.sRGBEncoding; //needed for accurate color representation of textures and materials
   renderer.toneMapping = THREE.ACESFilmicToneMapping; //needed for accurate rendering of HDR textures and realistic lighting effects
   renderer.toneMappingExposure = 1.25; //adjusts overall brightness of the scene to ensure HDR textures and lighting look correct without being too dark or washed out
+  // dpr
+  const DPR = window.devicePixelRatio;
+  renderer.setPixelRatio(Math.min(2, DPR));
 
   document.body.appendChild(renderer.domElement);
 
+  // Responsive canvas: update on window resize
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
   return { scene, camera, renderer };
 }
-``;

@@ -6,6 +6,7 @@ export async function createEnvironment(
   hdrPath,
   floorTextures = {},
   options = {},
+  physics = null,
 ) {
   // Load HDRI for sky/environment lighting
   new HDRLoader().load(hdrPath, (texture) => {
@@ -154,7 +155,10 @@ export async function createEnvironment(
   mesh.rotation.set(Math.PI / -2, 0, 0);
   scene.add(mesh);
 
-  // Physics code removed
+  // Add physics to the terrain mesh if physics is provided
+  if (physics) {
+    physics.add.existing(mesh, { mass: 0 }); // static body
+  }
 
   // Return mesh and terrain data for use in scene
   return { floor: mesh, heightBounds, terrainData };
