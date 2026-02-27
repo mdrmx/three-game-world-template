@@ -102,8 +102,8 @@ const DEFAULT_CONFIG = {
   floorLevel: 0,
   playerHeight: 1.6,
   gravity: 28,
-  walkAcceleration: 50,
-  sprintAcceleration: 450,
+  walkAcceleration: 5,
+  sprintAcceleration: 10,
   movementDamping: 12,
   jumpSpeed: 12,
   capsuleRadius: 0.4,
@@ -475,4 +475,39 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
   };
 
   return player;
+}
+
+export function setupMovement() {
+  // --- PLAYER MOVEMENT STATE ---
+  const movement = {
+    forward: false,
+    backward: false,
+    left: false,
+    right: false,
+    jump: false,
+    canJump: true,
+    sprint: false,
+  };
+
+  // Keyboard controls for WASD + jump
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "KeyW") movement.forward = true;
+    if (e.code === "KeyS") movement.backward = true;
+    if (e.code === "KeyA") movement.left = true;
+    if (e.code === "KeyD") movement.right = true;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
+      movement.sprint = true;
+    if (e.code === "Space" && movement.canJump) movement.jump = true;
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.code === "KeyW") movement.forward = false;
+    if (e.code === "KeyS") movement.backward = false;
+    if (e.code === "KeyA") movement.left = false;
+    if (e.code === "KeyD") movement.right = false;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
+      movement.sprint = false;
+    if (e.code === "Space") movement.jump = false;
+  });
+
+  return movement;
 }

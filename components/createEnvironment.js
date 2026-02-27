@@ -8,12 +8,14 @@ export async function createEnvironment(
   options = {},
   physics = null,
 ) {
-  // Load HDRI for sky/environment lighting
-  new HDRLoader().load(hdrPath, (texture) => {
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-    scene.background = texture;
-    scene.environment = texture;
-  });
+  if (hdrPath) {
+    // Load HDRI for sky/environment lighting
+    new HDRLoader().load(hdrPath, (texture) => {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      scene.background = texture;
+      scene.environment = texture;
+    });
+  }
 
   // Prepare texture loader and config
   const textureLoader = new THREE.TextureLoader();
@@ -153,9 +155,10 @@ export async function createEnvironment(
   const mesh = new THREE.Mesh(plane, mat);
   mesh.position.set(0, 0, 0);
   mesh.rotation.set(Math.PI / -2, 0, 0);
+
   scene.add(mesh);
 
-  // Add physics to the terrain mesh if physics is provided
+  // Add physics to the terrain mesh only after all geometry modifications
   if (physics) {
     physics.add.existing(mesh, { mass: 0 }); // static body
   }

@@ -19,8 +19,6 @@ export async function loadModel(
       let mixer = null;
       let activeAction = null;
 
-      console.log("hut model loaded:", gltf);
-
       // Compute the bounding box of the model
       let bounds = new THREE.Box3().setFromObject(model);
       let size = bounds.getSize(new THREE.Vector3());
