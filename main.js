@@ -4,6 +4,7 @@ import { createEnvironment } from "./components/createEnvironment.js"; // Terrai
 import { createScene } from "./components/createScene.js"; // Scene/camera/renderer
 import { loadModel } from "./components/modelLoader.js"; // GLTF model loader
 import { createRoomWalls } from "./components/createRoomWalls.js"; // room geometry with optional textures
+import { createPlayer } from "./components/playerSetup.js"; // encapsulated player/physics setup
 import {
   firstPersonSetup,
   setupMovement,
@@ -15,7 +16,6 @@ import {
   ExtendedMesh,
   PhysicsLoader,
 } from "@enable3d/ammo-physics";
-import { plane } from "three/examples/jsm/Addons.js";
 
 // '/ammo' is the folder where all ammo file are
 PhysicsLoader("/ammo", async () => {
@@ -24,11 +24,11 @@ PhysicsLoader("/ammo", async () => {
 
   // All code that uses Ammo/AmmoPhysics must be inside this callback!
   // Declare all variables locally to avoid ReferenceError
-  let scene, camera, renderer, player, terrainData, PLAYER_HEIGHT;
+  let scene, camera, renderer, player, terrainData;
   const models = [];
   const clock = new THREE.Clock();
 
-  const DEBUG_LOG_MOVEMENT = true; // Set to true to enable console logging of player movement data for debugging
+  const DEBUG_LOG_MOVEMENT = false; // Set to true to enable console logging of player movement data for debugging
 
   // ------ ENVIRONMENT SETUP ------
   // Create scene, camera, renderer
@@ -37,6 +37,10 @@ PhysicsLoader("/ammo", async () => {
   // Set up physics
   const physics = new AmmoPhysics(scene);
   if (DEBUG_LOG_MOVEMENT) physics.debug?.enable();
+
+  // Player/physics constants
+  const FLOOR_LEVEL = 0;
+  // (other movement constants are handled inside createPlayer)
 
   // Set up environment textures and terrain
   // const hdrPath = "textures/hdr/sky2.hdr"; // HDRI for sky background and lighting
@@ -69,110 +73,56 @@ PhysicsLoader("/ammo", async () => {
       physics,
     );
 
-  // Player/physics constants
-  const FLOOR_LEVEL = 0;
-  PLAYER_HEIGHT = 1.6;
-  const JUMP_SPEED = 20;
-  const WALK_ACCELERATION = 5; // Base ground thrust while walking
-  const SPRINT_ACCELERATION = 10; // Extra thrust when sprinting
-  const MOVEMENT_DAMPING = 20; // Air-resistance style decay
-
   // Store terrain data for use in animation loop
   terrainData = heightBounds && terrainDataLocal ? terrainDataLocal : null;
 
-  // Add a physics capsule for the player (better for character movement)
-  const playerCapsuleRadius = 0.4;
-  const playerCapsuleHeight = PLAYER_HEIGHT - 2 * playerCapsuleRadius;
-  // Start player well above the highest terrain point for gravity to act
-  const playerStart = { x: 0, y: (heightBounds.max ?? 0) + 5, z: 0 };
-  const playerCollider = physics.add.capsule(
-    {
-      radius: playerCapsuleRadius,
-      height: playerCapsuleHeight,
-      ...playerStart,
-      mass: 80,
-    },
-    { lambert: { color: 0x00ff00, transparent: true, opacity: 0 } },
-  );
-  // Hide collider visually
-
   // build room walls/ceiling; returns data used later for lights
+  // note: playerCollider not yet available, so collision group update will be
+  // handled after the collider is created.
   const { ceilingSize, ceilingY, wallThickness } = await createRoomWalls({
     scene,
     physics,
     planeSize,
-    // you can supply texture paths objects here, e.g.:
-    // wallTextures: { diffuseMap: "textures/wall/diff.jpg" , ... },
-    // ceilingTextures: { diffuseMap: "textures/ceiling/diff.jpg" , ... },
-    textureRepeat: 10, // adjust tiling on walls/ceiling
+    wallHeight: 5,
+    wallThickness: 0.5,
+    textureRepeat: 10,
+    wallTextures: {},
+    ceilingTextures: {},
+    textureRepeat: 10,
+  });
+
+  // build player capsule and first-person controller; radius is the only
+  // parameter required by main.
+  const playerCapsuleRadius = 0.4; // <--- modify this value as needed
+  const {
     playerCollider,
-  });
-  const playerMaterials =
-    Array.isArray(playerCollider.material) ?
-      playerCollider.material
-    : [playerCollider.material];
-  playerMaterials.forEach((mat) => {
-    if (!mat) return;
-    mat.transparent = true;
-    mat.opacity = 0;
-    mat.depthWrite = false;
-  });
-  scene.add(playerCollider);
-
-  // Prevent capsule from tipping over (lock rotation and add angular damping)
-  if (playerCollider.body) {
-    // Lock rotation on X and Z axes (allow Y for turning if needed)
-    playerCollider.body.setAngularFactor(0, 1, 0);
-    // Add angular damping to reduce spinning (setDamping(linear, angular))
-    if (typeof playerCollider.body.setDamping === "function") {
-      playerCollider.body.setDamping(0.01, 0.99);
-    }
-    // One-time velocity kick for debug
-    if (!window._capsuleKickDone) {
-      window._capsuleKickDone = true;
-      if (typeof playerCollider.body.setVelocity === "function") {
-        playerCollider.body.setVelocity(0, 5, 0);
-        console.log("[DEBUG] Applied velocity kick to capsule.");
-      } else if (playerCollider.body.ammo) {
-        // Try to access raw Ammo.js body
-        try {
-          const ammoBody = playerCollider.body.ammo;
-          if (ammoBody && ammoBody.setLinearVelocity) {
-            const v = new Ammo.btVector3(0, 5, 0);
-            ammoBody.setLinearVelocity(v);
-          }
-        } catch (e) {
-          console.warn("[DEBUG] Could not access raw Ammo.js body:", e);
-        }
-      }
-    }
-  }
-
-  // Set up first-person player controls, pass collider
-  player = await firstPersonSetup(camera, renderer, {
-    floorLevel: FLOOR_LEVEL,
-    playerHeight: PLAYER_HEIGHT,
-    gravity: 28,
-    walkAcceleration: WALK_ACCELERATION,
-    sprintAcceleration: SPRINT_ACCELERATION,
-    movementDamping: MOVEMENT_DAMPING,
-    jumpSpeed: JUMP_SPEED,
-    terrainBounds: heightBounds,
+    player: playerControls,
+    PLAYER_HEIGHT: _PLAYER_HEIGHT,
+  } = await createPlayer({
+    scene,
+    physics,
+    heightBounds,
     terrainData,
-    dynamicCapsule: playerCollider,
-    // No capsuleOffset
+    camera,
+    renderer,
+    capsuleRadius: playerCapsuleRadius,
+    floorLevel: FLOOR_LEVEL,
   });
+
+  player = playerControls;
+  // expose PLAYER_HEIGHT for later terrain adjustment
+  const PLAYER_HEIGHT = _PLAYER_HEIGHT;
 
   // Load animated models and add to scene
   const loader = new GLTFLoader();
   const modelNames = ["hut", "house"];
   const ANIMATION_PLAYBACK_RATE = 0.5; // 1 = source speed, <1 = slower
 
-  const pathToModel = `/models/tolerance_statue.glb`;
+  const pathToModel = `/models/house.glb`;
   // Place model at center of room, slightly above floor
   const centerY = 0.5; // Adjust if model is below floor
   const position = new THREE.Vector3(2, centerY, 0);
-  const scale = 3.5; // Adjust based on model size and desired scale in scene
+  const scale = 1; // Adjust based on model size and desired scale in scene
   let mass = 0; // Static by default
   const { model, mixer, activeAction, collider } = await loadModel(
     loader,
@@ -181,13 +131,17 @@ PhysicsLoader("/ammo", async () => {
     position,
     scene,
     physics,
-    { mass },
+    {
+      mass,
+      colliderOffset: new THREE.Vector3(0, 0, 0), // move box independently
+      // rotation will rotate both mesh and collider together
+    },
   );
 
   if (model) {
-    model.position.set(0, -0.4, 0); // Raise model higher
+    // model.position.set(0, 0, 0); // Raise model higher
     model.visible = true;
-    model.rotation.x = -Math.PI / 2; // Fix Z-up orientation
+
     // Ensure all child meshes are visible
     model.traverse((child) => {
       if (child.isMesh) {
@@ -238,7 +192,7 @@ PhysicsLoader("/ammo", async () => {
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Soft white light
   scene.add(ambientLight);
   const lightColor = 0xffffff;
-  const lightIntensity = 0.8;
+  const lightIntensity = 20.8;
   const lightDistance = 10;
   const lightDecay = 2;
 
@@ -255,8 +209,8 @@ PhysicsLoader("/ammo", async () => {
       const yOffset = ceilingY - wallThickness / 2 + 0.1;
       const light = new THREE.SpotLight(
         lightColor,
-        10.0, // Higher intensity for visible beams
-        30, // Longer distance
+        lightIntensity, // Higher intensity for visible beams
+        lightDistance, // Longer distance
         lightDecay,
       );
       light.position.set(x, yOffset, z);
