@@ -190,13 +190,15 @@ PhysicsLoader("/ammo", async () => {
   // add point lights across the ceiling as if it were a gallery space
   // Add ambient light for general illumination
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Soft white light
-  scene.add(ambientLight);
+  // scene.add(ambientLight);
+
+  let ceilingLights = [];
   const lightColor = 0xffffff;
-  const lightIntensity = 20.8;
+  const lightIntensity = 0;
   const lightDistance = 10;
   const lightDecay = 2;
 
-  const numLightsPerSide = 2;
+  const numLightsPerSide = 4;
   // Use ceilingSize[0] for X, ceilingSize[2] for Z
   for (let i = 0; i < numLightsPerSide; i++) {
     for (let j = 0; j < numLightsPerSide; j++) {
@@ -217,17 +219,19 @@ PhysicsLoader("/ammo", async () => {
       light.angle = Math.PI / 6.5; // Narrow beam
       light.penumbra = 0.4; // Soft edge
       light.castShadow = true;
+
+      ceilingLights.push(light);
       // Set target to floor
       const targetY = 0.1; // Slightly above floor
       light.target.position.set(x, targetY, z);
       scene.add(light.target);
       scene.add(light);
-      // Add a visible sphere to show the light position
-      const sphereGeometry = new THREE.SphereGeometry(0.15, 12, 12);
-      const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xffffaa });
-      const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-      sphere.position.set(x, yOffset, z);
-      scene.add(sphere);
+      // // Add a visible sphere to show the light position
+      // const sphereGeometry = new THREE.SphereGeometry(0.15, 12, 12);
+      // const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xffffaa });
+      // const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+      // sphere.position.set(x, yOffset, z);
+      // scene.add(sphere);
 
       // model.position.set(x - 3, -0.4, z); // Raise model higher
     }
@@ -259,6 +263,15 @@ PhysicsLoader("/ammo", async () => {
       forward.normalize();
       const right = new THREE.Vector3();
       right.crossVectors(forward, camera.up).normalize();
+
+      // turn on light when player is close enough
+      const lightActivationDistance = 7; // Adjust as needed
+      for (const light of ceilingLights) {
+        const distanceToPlayer = light.position.distanceTo(
+          playerCollider.position,
+        );
+        light.intensity = distanceToPlayer < lightActivationDistance ? 20.8 : 0;
+      }
 
       // Calculate desired velocity
       let velocity = new THREE.Vector3();
