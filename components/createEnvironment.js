@@ -55,7 +55,7 @@ export async function createEnvironment(
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(repeat, repeat);
     if (isColor) {
-      tex.encoding = THREE.sRGBEncoding;
+      tex.colorSpace = THREE.SRGBColorSpace;
     }
     return tex;
   };

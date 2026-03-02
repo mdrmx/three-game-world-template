@@ -3,3 +3,4 @@ public/models
 public/textures
 ._*
 .DS_Store
+dist/

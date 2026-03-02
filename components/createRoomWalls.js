@@ -30,7 +30,7 @@ async function buildMaterial(textureConfig = {}, repeat = 1) {
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(repeat, repeat);
-    if (isColor) tex.encoding = THREE.sRGBEncoding;
+    if (isColor) tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   };
 

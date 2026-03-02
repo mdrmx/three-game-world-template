@@ -18,7 +18,7 @@ export async function createScene() {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
 
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.outputEncoding = THREE.sRGBEncoding; //needed for accurate color representation of textures and materials
+  renderer.outputColorSpace = THREE.SRGBColorSpace; //needed for accurate color representation of textures and materials
   renderer.toneMapping = THREE.ACESFilmicToneMapping; //needed for accurate rendering of HDR textures and realistic lighting effects
   renderer.toneMappingExposure = 1.25; //adjusts overall brightness of the scene to ensure HDR textures and lighting look correct without being too dark or washed out
   // dpr
