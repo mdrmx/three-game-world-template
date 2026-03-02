@@ -27,6 +27,7 @@ export async function createPlayer({
   renderer,
   capsuleRadius = 0.4,
   floorLevel = 0,
+  playerOptions = {},
 } = {}) {
   if (!scene || !physics || !heightBounds || !camera || !renderer) {
     throw new Error(
@@ -36,9 +37,9 @@ export async function createPlayer({
 
   // configuration constants (kept here so main.js only touches radius)
   const PLAYER_HEIGHT = 1.6;
-  const JUMP_SPEED = 20;
-  const WALK_ACCELERATION = 5;
-  const SPRINT_ACCELERATION = 10;
+  const JUMP_SPEED = playerOptions.jumpSpeed ?? 8;
+  const WALK_ACCELERATION = playerOptions.walkAcceleration ?? 5;
+  const SPRINT_ACCELERATION = playerOptions.sprintAcceleration ?? 10;
   const MOVEMENT_DAMPING = 20;
 
   // create capsule:
@@ -109,7 +110,12 @@ export async function createPlayer({
       }
     }
   }
-
+  if (
+    playerCollider.body &&
+    typeof playerCollider.body.setRestitution === "function"
+  ) {
+    playerCollider.body.setRestitution(20); // Set to your desired value
+  }
   // add capsule to scene
   scene.add(playerCollider);
 

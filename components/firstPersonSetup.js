@@ -186,12 +186,12 @@ function createInputHandler(movement) {
         break;
       case "Space":
         movement.moveState.jump = isPressed;
-        if (isPressed) {
-          if (movement.isGrounded) {
-            movement.pendingJump = true;
-            movement.jumpBoost = movement.moveState.forward;
-          }
-        } else {
+        if (isPressed && movement.isGrounded) {
+          movement.pendingJump = true;
+          // Optionally, boost jump if moving forward
+          movement.jumpBoost = movement.moveState.forward;
+        }
+        if (!isPressed) {
           movement.pendingJump = false;
           movement.jumpBoost = false;
         }
@@ -242,6 +242,7 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
       pointerElement.setAttribute("tabindex", "-1");
     }
     pointerElement.style.outline = "none";
+    ``;
   }
 
   const controls = new PointerLockControls(camera, pointerElement);
@@ -462,39 +463,4 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
   };
 
   return player;
-}
-
-export function setupMovement() {
-  // --- PLAYER MOVEMENT STATE ---
-  const movement = {
-    forward: false,
-    backward: false,
-    left: false,
-    right: false,
-    jump: false,
-    canJump: true,
-    sprint: false,
-  };
-
-  // Keyboard controls for WASD + jump
-  window.addEventListener("keydown", (e) => {
-    if (e.code === "KeyW") movement.forward = true;
-    if (e.code === "KeyS") movement.backward = true;
-    if (e.code === "KeyA") movement.left = true;
-    if (e.code === "KeyD") movement.right = true;
-    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
-      movement.sprint = true;
-    if (e.code === "Space" && movement.canJump) movement.jump = true;
-  });
-  window.addEventListener("keyup", (e) => {
-    if (e.code === "KeyW") movement.forward = false;
-    if (e.code === "KeyS") movement.backward = false;
-    if (e.code === "KeyA") movement.left = false;
-    if (e.code === "KeyD") movement.right = false;
-    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
-      movement.sprint = false;
-    if (e.code === "Space") movement.jump = false;
-  });
-
-  return movement;
 }

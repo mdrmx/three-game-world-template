@@ -5,26 +5,52 @@ import { createScene } from "./components/createScene.js"; // Scene/camera/rende
 import { loadModel } from "./components/modelLoader.js"; // GLTF model loader
 import { createRoomWalls } from "./components/createRoomWalls.js"; // room geometry with optional textures
 import { createPlayer } from "./components/playerSetup.js"; // encapsulated player/physics setup
-import {
-  firstPersonSetup,
-  setupMovement,
-} from "./components/firstPersonSetup.js"; // First-person controls
+import { firstPersonSetup } from "./components/firstPersonSetup.js"; // First-person controls
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"; // Three.js GLTF loader
 // physics
 import { AmmoPhysics, PhysicsLoader } from "@enable3d/ammo-physics";
 
 // '/ammo' is the folder where all ammo file are
 PhysicsLoader("/ammo", async () => {
-  // ------ PLAYER MOVEMENT STATE ------
-  const movement = setupMovement();
+  // ------ PLAYER MOVEMENT STATE FOR PHYSICS ------
+  const movement = {
+    forward: false,
+    backward: false,
+    left: false,
+    right: false,
+    jump: false,
+    canJump: true,
+    sprint: false,
+  };
+
+  // Keyboard controls for WASD + jump
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "KeyW") movement.forward = true;
+    if (e.code === "KeyS") movement.backward = true;
+    if (e.code === "KeyA") movement.left = true;
+    if (e.code === "KeyD") movement.right = true;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
+      movement.sprint = true;
+    if (e.code === "Space") movement.jump = true;
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.code === "KeyW") movement.forward = false;
+    if (e.code === "KeyS") movement.backward = false;
+    if (e.code === "KeyA") movement.left = false;
+    if (e.code === "KeyD") movement.right = false;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
+      movement.sprint = false;
+    if (e.code === "Space") movement.jump = false;
+  });
 
   // All code that uses Ammo/AmmoPhysics must be inside this callback!
   // Declare all variables locally to avoid ReferenceError
   let scene, camera, renderer, player, terrainData;
   const models = [];
   const clock = new THREE.Clock();
+  let lastGroundedAt = 0;
 
-  const DEBUG_LOG_MOVEMENT = true; // Set to true to enable console logging of player movement data for debugging
+  const DEBUG_LOG_MOVEMENT = false; // Set to true to enable console logging of player movement data for debugging
 
   // ------ ENVIRONMENT SETUP ------
   // Create scene, camera, renderer
@@ -38,31 +64,31 @@ PhysicsLoader("/ammo", async () => {
 
   // Set up environment textures and terrain
   // const hdrPath = "textures/hdr/sky2.hdr"; // HDRI for sky background and lighting
-  const hdrPath = null; // HDRI for sky background and lighting
-  const texName = "planks"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
+  const hdrPath = "public/textures/hdr/sky2.hdr"; // HDRI for sky background and lighting
+  const texName = "rocks"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
   const texturePaths = {
     diffuseMap: `textures/floor/${texName}/${texName}_diff.jpg`,
     aoMap: `textures/floor/${texName}/${texName}_ao.jpg`,
     armMap: `textures/floor/${texName}/${texName}_arm.jpg`,
-    normalMap: `textures/floor/${texName}/${texName}_nor_gl.jpg`,
+    normalMap: `textures/floor/${texName}/${texName}_nor.jpg`,
     displacementMap: `textures/floor/${texName}/${texName}_disp.jpg`,
     roughnessMap: `textures/floor/${texName}/${texName}_rough.jpg`,
   };
 
   // Generate terrain and get height data
   // Exaggerate terrain height for debugging
-  const planeSize = 20; // Size of terrain plane (must match createEnvironment config)
+  const planeSize = 500; // Size of terrain plane (must match createEnvironment config)
   const { heightBounds, terrainData: terrainDataLocal } =
     await createEnvironment(
       scene,
       hdrPath,
       texturePaths,
       {
-        textureRepeat: 10, // Tiling of floor textures
+        textureRepeat: 20, // Tiling of floor textures
         planeSize: planeSize, // Size of terrain
-        segments: 100, // Grid resolution
-        heightScale: 2, // Exaggerated vertical exaggeration for debug
-        heightBias: -2, // Lower terrain for debug
+        segments: 80, // Grid resolution
+        heightScale: 10, // Exaggerated vertical exaggeration for debug
+        heightBias: -4, // Lower terrain for debug
       },
       physics,
     );
@@ -82,20 +108,24 @@ PhysicsLoader("/ammo", async () => {
   // build room walls/ceiling; returns data used later for lights
   // note: playerCollider not yet available, so collision group update will be
   // handled after the collider is created.
-  const { ceilingSize, ceilingY, wallThickness } = await createRoomWalls({
-    scene,
-    physics,
-    planeSize,
-    wallHeight: 5,
-    wallThickness: 0.5,
-    textureRepeat: 3,
-    wallTextures: wallTexturePaths,
-    ceilingTextures: {},
-  });
+  // const { ceilingSize, ceilingY, wallThickness } = await createRoomWalls({
+  //   scene,
+  //   physics,
+  //   planeSize,
+  //   wallHeight: 5,
+  //   wallThickness: 0.5,
+  //   textureRepeat: 3,
+  //   wallTextures: wallTexturePaths,
+  //   ceilingTextures: {},
+  // });
 
   // build player capsule and first-person controller; radius is the only
   // parameter required by main.
   const playerCapsuleRadius = 0.4; // <--- modify this value as needed
+  // Set your desired speeds here:
+  const walkAcceleration = 4; // Change this value for walk speed
+  const sprintAcceleration = 8; // Change this value for sprint speed
+  const jumpSpeed = 1; // Change this value for jump speed
   const {
     playerCollider,
     player: playerControls,
@@ -108,11 +138,14 @@ PhysicsLoader("/ammo", async () => {
     camera,
     renderer,
     capsuleRadius: playerCapsuleRadius,
+    playerOptions: {
+      walkAcceleration,
+      sprintAcceleration,
+      jumpSpeed,
+    },
   });
 
   player = playerControls;
-  // expose PLAYER_HEIGHT for later terrain adjustment
-  const PLAYER_HEIGHT = _PLAYER_HEIGHT;
 
   // Load animated models and add to scene
   const loader = new GLTFLoader();
@@ -199,44 +232,44 @@ PhysicsLoader("/ammo", async () => {
   const lightDistance = 10;
   const lightDecay = 2;
 
-  const numLightsPerSide = 4;
-  // Use ceilingSize[0] for X, ceilingSize[2] for Z
-  for (let i = 0; i < numLightsPerSide; i++) {
-    for (let j = 0; j < numLightsPerSide; j++) {
-      const x =
-        -ceilingSize[0] / 2 +
-        (ceilingSize[0] / (numLightsPerSide + 1)) * (i + 1);
-      const z =
-        -ceilingSize[2] / 2 +
-        (ceilingSize[2] / (numLightsPerSide + 1)) * (j + 1);
-      const yOffset = ceilingY - wallThickness / 2 + 0.1;
-      const light = new THREE.SpotLight(
-        lightColor,
-        lightIntensity, // Higher intensity for visible beams
-        lightDistance, // Longer distance
-        lightDecay,
-      );
-      light.position.set(x, yOffset, z);
-      light.angle = Math.PI / 6.5; // Narrow beam
-      light.penumbra = 0.4; // Soft edge
-      light.castShadow = true;
+  // const numLightsPerSide = 4;
+  // // Use ceilingSize[0] for X, ceilingSize[2] for Z
+  // for (let i = 0; i < numLightsPerSide; i++) {
+  //   for (let j = 0; j < numLightsPerSide; j++) {
+  //     const x =
+  //       -ceilingSize[0] / 2 +
+  //       (ceilingSize[0] / (numLightsPerSide + 1)) * (i + 1);
+  //     const z =
+  //       -ceilingSize[2] / 2 +
+  //       (ceilingSize[2] / (numLightsPerSide + 1)) * (j + 1);
+  //     const yOffset = ceilingY - wallThickness / 2 + 0.1;
+  //     const light = new THREE.SpotLight(
+  //       lightColor,
+  //       lightIntensity, // Higher intensity for visible beams
+  //       lightDistance, // Longer distance
+  //       lightDecay,
+  //     );
+  //     light.position.set(x, yOffset, z);
+  //     light.angle = Math.PI / 6.5; // Narrow beam
+  //     light.penumbra = 0.4; // Soft edge
+  //     light.castShadow = true;
 
-      ceilingLights.push(light);
-      // Set target to floor
-      const targetY = 0.1; // Slightly above floor
-      light.target.position.set(x, targetY, z);
-      scene.add(light.target);
-      scene.add(light);
-      // // Add a visible sphere to show the light position
-      // const sphereGeometry = new THREE.SphereGeometry(0.15, 12, 12);
-      // const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xffffaa });
-      // const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-      // sphere.position.set(x, yOffset, z);
-      // scene.add(sphere);
+  //     ceilingLights.push(light);
+  //     // Set target to floor
+  //     const targetY = 0.1; // Slightly above floor
+  //     light.target.position.set(x, targetY, z);
+  //     scene.add(light.target);
+  //     scene.add(light);
+  //     // // Add a visible sphere to show the light position
+  //     // const sphereGeometry = new THREE.SphereGeometry(0.15, 12, 12);
+  //     // const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xffffaa });
+  //     // const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+  //     // sphere.position.set(x, yOffset, z);
+  //     // scene.add(sphere);
 
-      // model.position.set(x - 3, -0.4, z); // Raise model higher
-    }
-  }
+  //     // model.position.set(x - 3, -0.4, z); // Raise model higher
+  //   }
+  // }
 
   // Start animation loop
   renderer.setAnimationLoop(animate);
@@ -276,33 +309,32 @@ PhysicsLoader("/ammo", async () => {
 
       // Calculate desired velocity
       let velocity = new THREE.Vector3();
-      // Use player config for movement speed
-      const walkSpeed = player?.config?.walkAcceleration ?? 8;
-      const sprintSpeed = player?.config?.sprintAcceleration ?? 16;
+      // Use player config for movement speed ONLY (no fallback)
+      const walkSpeed = player?.config?.walkAcceleration;
+      const sprintSpeed = player?.config?.sprintAcceleration;
       const speed = movement.sprint ? sprintSpeed : walkSpeed;
       if (movement.forward) velocity.add(forward);
       if (movement.backward) velocity.sub(forward);
       if (movement.left) velocity.sub(right);
       if (movement.right) velocity.add(right);
-      if (velocity.lengthSq() > 0) velocity.normalize().multiplyScalar(speed);
+      if (velocity.lengthSq() > 0 && typeof speed === "number")
+        velocity.normalize().multiplyScalar(speed);
 
       // Set collider velocity (keep y velocity for gravity/jump)
       const body = playerCollider.body;
       if (body) {
         const currentVel = body.velocity;
         body.setVelocity(velocity.x, currentVel.y, velocity.z);
-        // Jump
-        if (
-          movement.jump &&
-          movement.canJump &&
-          Math.abs(currentVel.y) < 0.05
-        ) {
-          body.setVelocity(currentVel.x, 10, currentVel.z);
-          movement.canJump = false;
-        }
-        // Reset jump when on ground
-        if (Math.abs(currentVel.y) < 0.05) {
-          movement.canJump = true;
+        // Moving over uneven terrain can keep Y velocity slightly non-zero.
+        const now = performance.now();
+        const isGroundedNow = Math.abs(currentVel.y) < 1.0;
+        if (isGroundedNow) lastGroundedAt = now;
+        const canJumpNow = now - lastGroundedAt < 120;
+
+        if (movement.jump && canJumpNow) {
+          body.setVelocity(velocity.x, 20, velocity.z);
+          movement.jump = false;
+          lastGroundedAt = 0;
         }
       }
 
@@ -316,17 +348,6 @@ PhysicsLoader("/ammo", async () => {
     // Update physics
     physics.update(delta * 1000);
     physics.updateDebugger();
-
-    // // Update player controls and keep player on terrain
-    // // Only update player logic if physics is NOT controlling the player
-    // const physicsActive =
-    //   playerCollider && player && player.controls && player.controls.isLocked;
-    // if (player && !physicsActive) {
-    //   player.update(delta);
-    //   if (typeof player.keepOnTerrain === "function") {
-    //     player.keepOnTerrain(terrainData, PLAYER_HEIGHT);
-    //   }
-    // }
 
     // Render the scene
     renderer.render(scene, camera);
