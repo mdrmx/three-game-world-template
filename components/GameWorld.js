@@ -4,6 +4,7 @@ import { AmmoPhysics } from "@enable3d/ammo-physics";
 
 import { createEnvironment } from "./createEnvironment.js";
 import { createPlayer } from "./playerSetup.js";
+import { createRoomWalls } from "./createRoomWalls.js";
 import { createScene } from "./createScene.js";
 import { loadModel } from "./modelLoader.js";
 import { GAME_CONFIG, createPbrTexturePaths } from "./gameConfig.js";
@@ -46,6 +47,7 @@ export class GameWorld {
     await this.setupScene();
     await this.setupEnvironment();
     await this.setupPlayer();
+    await this.setupRoom();
     await this.setupModels();
     this.setupLighting();
   }
@@ -88,6 +90,13 @@ export class GameWorld {
     this.camera = camera;
     this.renderer = renderer;
     this.physics = new AmmoPhysics(scene);
+
+    const showColliderDebug = Boolean(this.config?.physics?.debugColliders);
+    if (showColliderDebug) {
+      this.physics.debug?.enable();
+    } else {
+      this.physics.debug?.disable?.();
+    }
   }
 
   async setupEnvironment() {
@@ -134,6 +143,34 @@ export class GameWorld {
 
     this.playerCollider = playerCollider;
     this.player = player;
+  }
+
+  async setupRoom() {
+    const room = this.config.room;
+    if (!room?.enabled) return;
+
+    const environment = this.config.environment || {};
+    const wallTextureSet =
+      room.wallTextureSet ?? environment.wallTextureSet ?? null;
+
+    const wallTextures =
+      wallTextureSet ? createPbrTexturePaths("walls", wallTextureSet) : {};
+    const ceilingTextures =
+      room.ceilingTextureSet ?
+        createPbrTexturePaths("walls", room.ceilingTextureSet)
+      : {};
+
+    await createRoomWalls({
+      scene: this.scene,
+      physics: this.physics,
+      planeSize: environment.planeSize,
+      wallHeight: room.wallHeight,
+      wallThickness: room.wallThickness,
+      textureRepeat: room.textureRepeat,
+      wallTextures,
+      ceilingTextures,
+      playerCollider: this.playerCollider,
+    });
   }
 
   async setupModels() {
