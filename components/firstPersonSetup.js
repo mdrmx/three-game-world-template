@@ -99,7 +99,6 @@ function createTerrainSampler(data) {
  * Baseline configuration for player movement and capsule characteristics.
  */
 const DEFAULT_CONFIG = {
-  floorLevel: 0,
   playerHeight: 1.6,
   gravity: 28,
   walkAcceleration: 5,
@@ -219,12 +218,12 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
   const derivedBounds =
     terrainData ?
       {
-        min: terrainData.min ?? config.floorLevel,
-        max: terrainData.max ?? config.floorLevel,
+        min: terrainData.min,
+        max: terrainData.max,
       }
     : {
-        min: config.floorLevel,
-        max: config.floorLevel,
+        min: undefined,
+        max: undefined,
       };
   const terrainBounds =
     terrainBoundsOverride ?
@@ -234,7 +233,7 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
   const groundResolver = createGroundResolver(
     terrainSampler,
     terrainBounds,
-    config.floorLevel,
+    undefined,
   );
 
   const pointerElement = renderer?.domElement || document.body;
@@ -389,19 +388,7 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
     }
 
     if (!terrainSampler) {
-      const minY =
-        (terrainBounds.min ?? config.floorLevel) + config.playerHeight;
-      if (camera.position.y <= minY) {
-        setCameraPosition(
-          controlsObject.position.x,
-          minY,
-          controlsObject.position.z,
-        );
-        movement.velocity.y = 0;
-        movement.isGrounded = true;
-      } else {
-        movement.isGrounded = false;
-      }
+      movement.isGrounded = false;
     } else {
       movement.isGrounded = groundedFromTerrain;
     }

@@ -1,5 +1,6 @@
 // Environment/terrain setup for 3D scene
 import * as THREE from "three";
+import { ExtendedMesh } from "enable3d";
 import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 export async function createEnvironment(
   scene,
@@ -152,7 +153,7 @@ export async function createEnvironment(
   // Create mesh and add to scene
   const mat = new THREE.MeshStandardMaterial(materialParams);
 
-  const mesh = new THREE.Mesh(plane, mat);
+  const mesh = new ExtendedMesh(plane, mat);
   mesh.position.set(0, 0, 0);
   mesh.rotation.set(Math.PI / -2, 0, 0);
 
@@ -160,7 +161,7 @@ export async function createEnvironment(
 
   // Add physics to the terrain mesh only after all geometry modifications
   if (physics) {
-    physics.add.existing(mesh, { mass: 0 }); // static body
+    physics.add.existing(mesh, { mass: 0, shape: "convex" }); // static body
   }
 
   // Return mesh and terrain data for use in scene

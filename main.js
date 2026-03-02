@@ -11,11 +11,7 @@ import {
 } from "./components/firstPersonSetup.js"; // First-person controls
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"; // Three.js GLTF loader
 // physics
-import {
-  AmmoPhysics,
-  ExtendedMesh,
-  PhysicsLoader,
-} from "@enable3d/ammo-physics";
+import { AmmoPhysics, PhysicsLoader } from "@enable3d/ammo-physics";
 
 // '/ammo' is the folder where all ammo file are
 PhysicsLoader("/ammo", async () => {
@@ -28,7 +24,7 @@ PhysicsLoader("/ammo", async () => {
   const models = [];
   const clock = new THREE.Clock();
 
-  const DEBUG_LOG_MOVEMENT = false; // Set to true to enable console logging of player movement data for debugging
+  const DEBUG_LOG_MOVEMENT = true; // Set to true to enable console logging of player movement data for debugging
 
   // ------ ENVIRONMENT SETUP ------
   // Create scene, camera, renderer
@@ -39,20 +35,18 @@ PhysicsLoader("/ammo", async () => {
   if (DEBUG_LOG_MOVEMENT) physics.debug?.enable();
 
   // Player/physics constants
-  const FLOOR_LEVEL = 0;
-  // (other movement constants are handled inside createPlayer)
 
   // Set up environment textures and terrain
   // const hdrPath = "textures/hdr/sky2.hdr"; // HDRI for sky background and lighting
   const hdrPath = null; // HDRI for sky background and lighting
   const texName = "planks"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
   const texturePaths = {
-    diffuseMap: `textures/floor/${texName}/${texName}_diff_2k.jpg`,
-    aoMap: `textures/floor/${texName}/${texName}_ao_2k.jpg`,
-    armMap: `textures/floor/${texName}/${texName}_arm_2k.jpg`,
-    normalMap: `textures/floor/${texName}/${texName}_nor_gl_2k.jpg`,
-    displacementMap: `textures/floor/${texName}/${texName}_disp_2k.jpg`,
-    roughnessMap: `textures/floor/${texName}/${texName}_rough_2k.jpg`,
+    diffuseMap: `textures/floor/${texName}/${texName}_diff.jpg`,
+    aoMap: `textures/floor/${texName}/${texName}_ao.jpg`,
+    armMap: `textures/floor/${texName}/${texName}_arm.jpg`,
+    normalMap: `textures/floor/${texName}/${texName}_nor_gl.jpg`,
+    displacementMap: `textures/floor/${texName}/${texName}_disp.jpg`,
+    roughnessMap: `textures/floor/${texName}/${texName}_rough.jpg`,
   };
 
   // Generate terrain and get height data
@@ -67,8 +61,8 @@ PhysicsLoader("/ammo", async () => {
         textureRepeat: 10, // Tiling of floor textures
         planeSize: planeSize, // Size of terrain
         segments: 100, // Grid resolution
-        heightScale: 0, // Exaggerated vertical exaggeration for debug
-        heightBias: 0, // Lower terrain for debug
+        heightScale: 2, // Exaggerated vertical exaggeration for debug
+        heightBias: -2, // Lower terrain for debug
       },
       physics,
     );
@@ -76,6 +70,15 @@ PhysicsLoader("/ammo", async () => {
   // Store terrain data for use in animation loop
   terrainData = heightBounds && terrainDataLocal ? terrainDataLocal : null;
 
+  const wallTexName = "damaged_plaster"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
+  const wallTexturePaths = {
+    diffuseMap: `textures/walls/${wallTexName}/${wallTexName}_diff.jpg`,
+    aoMap: `textures/walls/${wallTexName}/${wallTexName}_ao.jpg`,
+    armMap: `textures/walls/${wallTexName}/${wallTexName}_arm.jpg`,
+    normalMap: `textures/walls/${wallTexName}/${wallTexName}_nor.jpg`,
+    displacementMap: `textures/walls/${wallTexName}/${wallTexName}_disp.jpg`,
+    roughnessMap: `textures/walls/${wallTexName}/${wallTexName}_rough.jpg`,
+  };
   // build room walls/ceiling; returns data used later for lights
   // note: playerCollider not yet available, so collision group update will be
   // handled after the collider is created.
@@ -85,10 +88,9 @@ PhysicsLoader("/ammo", async () => {
     planeSize,
     wallHeight: 5,
     wallThickness: 0.5,
-    textureRepeat: 10,
-    wallTextures: {},
+    textureRepeat: 3,
+    wallTextures: wallTexturePaths,
     ceilingTextures: {},
-    textureRepeat: 10,
   });
 
   // build player capsule and first-person controller; radius is the only
@@ -106,7 +108,6 @@ PhysicsLoader("/ammo", async () => {
     camera,
     renderer,
     capsuleRadius: playerCapsuleRadius,
-    floorLevel: FLOOR_LEVEL,
   });
 
   player = playerControls;
@@ -190,7 +191,7 @@ PhysicsLoader("/ammo", async () => {
   // add point lights across the ceiling as if it were a gallery space
   // Add ambient light for general illumination
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Soft white light
-  // scene.add(ambientLight);
+  scene.add(ambientLight);
 
   let ceilingLights = [];
   const lightColor = 0xffffff;
@@ -316,16 +317,16 @@ PhysicsLoader("/ammo", async () => {
     physics.update(delta * 1000);
     physics.updateDebugger();
 
-    // Update player controls and keep player on terrain
-    // Only update player logic if physics is NOT controlling the player
-    const physicsActive =
-      playerCollider && player && player.controls && player.controls.isLocked;
-    if (player && !physicsActive) {
-      player.update(delta);
-      if (typeof player.keepOnTerrain === "function") {
-        player.keepOnTerrain(terrainData, PLAYER_HEIGHT);
-      }
-    }
+    // // Update player controls and keep player on terrain
+    // // Only update player logic if physics is NOT controlling the player
+    // const physicsActive =
+    //   playerCollider && player && player.controls && player.controls.isLocked;
+    // if (player && !physicsActive) {
+    //   player.update(delta);
+    //   if (typeof player.keepOnTerrain === "function") {
+    //     player.keepOnTerrain(terrainData, PLAYER_HEIGHT);
+    //   }
+    // }
 
     // Render the scene
     renderer.render(scene, camera);
