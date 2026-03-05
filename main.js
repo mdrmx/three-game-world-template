@@ -5,52 +5,19 @@ import { createScene } from "./components/createScene.js"; // Scene/camera/rende
 import { loadModel } from "./components/modelLoader.js"; // GLTF model loader
 import { createRoomWalls } from "./components/createRoomWalls.js"; // room geometry with optional textures
 import { createPlayer } from "./components/playerSetup.js"; // encapsulated player/physics setup
-import { firstPersonSetup } from "./components/firstPersonSetup.js"; // First-person controls
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"; // Three.js GLTF loader
 // physics
 import { AmmoPhysics, PhysicsLoader } from "@enable3d/ammo-physics";
 
 // '/ammo' is the folder where all ammo file are
 PhysicsLoader("/ammo", async () => {
-  // ------ PLAYER MOVEMENT STATE FOR PHYSICS ------
-  const movement = {
-    forward: false,
-    backward: false,
-    left: false,
-    right: false,
-    jump: false,
-    canJump: true,
-    sprint: false,
-  };
-
-  // Keyboard controls for WASD + jump
-  window.addEventListener("keydown", (e) => {
-    if (e.code === "KeyW") movement.forward = true;
-    if (e.code === "KeyS") movement.backward = true;
-    if (e.code === "KeyA") movement.left = true;
-    if (e.code === "KeyD") movement.right = true;
-    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
-      movement.sprint = true;
-    if (e.code === "Space") movement.jump = true;
-  });
-  window.addEventListener("keyup", (e) => {
-    if (e.code === "KeyW") movement.forward = false;
-    if (e.code === "KeyS") movement.backward = false;
-    if (e.code === "KeyA") movement.left = false;
-    if (e.code === "KeyD") movement.right = false;
-    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
-      movement.sprint = false;
-    if (e.code === "Space") movement.jump = false;
-  });
-
   // All code that uses Ammo/AmmoPhysics must be inside this callback!
   // Declare all variables locally to avoid ReferenceError
-  let scene, camera, renderer, player, terrainData;
+  let scene, camera, renderer, terrainData;
   const models = [];
   const clock = new THREE.Clock();
-  let lastGroundedAt = 0;
 
-  const DEBUG_LOG_MOVEMENT = false; // Set to true to enable console logging of player movement data for debugging
+  const DEBUG_LOG_MOVEMENT = true; // Set to true to enable console logging of player movement data for debugging
 
   // ------ ENVIRONMENT SETUP ------
   // Create scene, camera, renderer
@@ -60,12 +27,10 @@ PhysicsLoader("/ammo", async () => {
   const physics = new AmmoPhysics(scene);
   if (DEBUG_LOG_MOVEMENT) physics.debug?.enable();
 
-  // Player/physics constants
-
   // Set up environment textures and terrain
   // const hdrPath = "textures/hdr/sky2.hdr"; // HDRI for sky background and lighting
-  const hdrPath = "public/textures/hdr/sky2.hdr"; // HDRI for sky background and lighting
-  const texName = "rocks"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
+  const hdrPath = ""; // HDRI for sky background and lighting
+  const texName = "planks"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
   const texturePaths = {
     diffuseMap: `textures/floor/${texName}/${texName}_diff.jpg`,
     aoMap: `textures/floor/${texName}/${texName}_ao.jpg`,
@@ -77,7 +42,7 @@ PhysicsLoader("/ammo", async () => {
 
   // Generate terrain and get height data
   // Exaggerate terrain height for debugging
-  const planeSize = 500; // Size of terrain plane (must match createEnvironment config)
+  const planeSize = 25; // Size of terrain plane (must match createEnvironment config)
   const { heightBounds, terrainData: terrainDataLocal } =
     await createEnvironment(
       scene,
@@ -87,8 +52,8 @@ PhysicsLoader("/ammo", async () => {
         textureRepeat: 20, // Tiling of floor textures
         planeSize: planeSize, // Size of terrain
         segments: 80, // Grid resolution
-        heightScale: 10, // Exaggerated vertical exaggeration for debug
-        heightBias: -4, // Lower terrain for debug
+        heightScale: 0, // Exaggerated vertical exaggeration for debug
+        heightBias: 0, // Lower terrain for debug
       },
       physics,
     );
@@ -99,25 +64,25 @@ PhysicsLoader("/ammo", async () => {
   const wallTexName = "damaged_plaster"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
   const wallTexturePaths = {
     diffuseMap: `textures/walls/${wallTexName}/${wallTexName}_diff.jpg`,
-    aoMap: `textures/walls/${wallTexName}/${wallTexName}_ao.jpg`,
+    // aoMap: `textures/walls/${wallTexName}/${wallTexName}_ao.jpg`,
     armMap: `textures/walls/${wallTexName}/${wallTexName}_arm.jpg`,
     normalMap: `textures/walls/${wallTexName}/${wallTexName}_nor.jpg`,
     displacementMap: `textures/walls/${wallTexName}/${wallTexName}_disp.jpg`,
-    roughnessMap: `textures/walls/${wallTexName}/${wallTexName}_rough.jpg`,
+    // roughnessMap: `textures/walls/${wallTexName}/${wallTexName}_rough.jpg`,
   };
   // build room walls/ceiling; returns data used later for lights
   // note: playerCollider not yet available, so collision group update will be
   // handled after the collider is created.
-  // const { ceilingSize, ceilingY, wallThickness } = await createRoomWalls({
-  //   scene,
-  //   physics,
-  //   planeSize,
-  //   wallHeight: 5,
-  //   wallThickness: 0.5,
-  //   textureRepeat: 3,
-  //   wallTextures: wallTexturePaths,
-  //   ceilingTextures: {},
-  // });
+  const { ceilingSize, ceilingY, wallThickness } = await createRoomWalls({
+    scene,
+    physics,
+    planeSize,
+    wallHeight: 5,
+    wallThickness: 0.5,
+    textureRepeat: 3,
+    wallTextures: wallTexturePaths,
+    ceilingTextures: {},
+  });
 
   // build player capsule and first-person controller; radius is the only
   // parameter required by main.
@@ -125,11 +90,12 @@ PhysicsLoader("/ammo", async () => {
   // Set your desired speeds here:
   const walkAcceleration = 4; // Change this value for walk speed
   const sprintAcceleration = 8; // Change this value for sprint speed
-  const jumpSpeed = 1; // Change this value for jump speed
+  const jumpSpeed = 5; // Change this value for jump speed
   const {
     playerCollider,
-    player: playerControls,
     PLAYER_HEIGHT: _PLAYER_HEIGHT,
+    movement: _playerMovement, // unused helper state
+    update: updatePlayer,
   } = await createPlayer({
     scene,
     physics,
@@ -144,8 +110,6 @@ PhysicsLoader("/ammo", async () => {
       jumpSpeed,
     },
   });
-
-  player = playerControls;
 
   // Load animated models and add to scene
   const loader = new GLTFLoader();
@@ -229,47 +193,46 @@ PhysicsLoader("/ammo", async () => {
   let ceilingLights = [];
   const lightColor = 0xffffff;
   const lightIntensity = 0;
-  const lightDistance = 10;
+
+  const lightDistance = 25;
   const lightDecay = 2;
 
-  // const numLightsPerSide = 4;
-  // // Use ceilingSize[0] for X, ceilingSize[2] for Z
-  // for (let i = 0; i < numLightsPerSide; i++) {
-  //   for (let j = 0; j < numLightsPerSide; j++) {
-  //     const x =
-  //       -ceilingSize[0] / 2 +
-  //       (ceilingSize[0] / (numLightsPerSide + 1)) * (i + 1);
-  //     const z =
-  //       -ceilingSize[2] / 2 +
-  //       (ceilingSize[2] / (numLightsPerSide + 1)) * (j + 1);
-  //     const yOffset = ceilingY - wallThickness / 2 + 0.1;
-  //     const light = new THREE.SpotLight(
-  //       lightColor,
-  //       lightIntensity, // Higher intensity for visible beams
-  //       lightDistance, // Longer distance
-  //       lightDecay,
-  //     );
-  //     light.position.set(x, yOffset, z);
-  //     light.angle = Math.PI / 6.5; // Narrow beam
-  //     light.penumbra = 0.4; // Soft edge
-  //     light.castShadow = true;
+  const numLightsPerSide = 4;
+  // Use ceilingSize[0] for X, ceilingSize[2] for Z
+  for (let i = 0; i < numLightsPerSide; i++) {
+    for (let j = 0; j < numLightsPerSide; j++) {
+      const x =
+        -ceilingSize[0] / 2 +
+        (ceilingSize[0] / (numLightsPerSide + 1)) * (i + 1);
+      const z =
+        -ceilingSize[2] / 2 +
+        (ceilingSize[2] / (numLightsPerSide + 1)) * (j + 1);
+      const yOffset = ceilingY - wallThickness / 2 + 0.1;
+      const light = new THREE.SpotLight(
+        lightColor,
+        lightIntensity, // Higher intensity for visible beams
+        lightDistance, // Longer distance
+        lightDecay,
+      );
+      light.position.set(x, yOffset, z);
+      light.angle = Math.PI / 6.5; // Narrow beam
+      light.penumbra = 0.4; // Soft edge
+      light.castShadow = true;
 
-  //     ceilingLights.push(light);
-  //     // Set target to floor
-  //     const targetY = 0.1; // Slightly above floor
-  //     light.target.position.set(x, targetY, z);
-  //     scene.add(light.target);
-  //     scene.add(light);
-  //     // // Add a visible sphere to show the light position
-  //     // const sphereGeometry = new THREE.SphereGeometry(0.15, 12, 12);
-  //     // const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xffffaa });
-  //     // const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-  //     // sphere.position.set(x, yOffset, z);
-  //     // scene.add(sphere);
-
-  //     // model.position.set(x - 3, -0.4, z); // Raise model higher
-  //   }
-  // }
+      ceilingLights.push(light);
+      // Set target to floor
+      const targetY = 0.1; // Slightly above floor
+      light.target.position.set(x, targetY, z);
+      scene.add(light.target);
+      scene.add(light);
+      // // Add a visible sphere to show the light position
+      const sphereGeometry = new THREE.SphereGeometry(0.15, 12, 12);
+      const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xffffaa });
+      const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+      sphere.position.set(x, yOffset, z);
+      scene.add(sphere);
+    }
+  }
 
   // Start animation loop
   renderer.setAnimationLoop(animate);
@@ -283,66 +246,20 @@ PhysicsLoader("/ammo", async () => {
       if (model.mixer) model.mixer.update(delta);
     }
 
-    // --- PLAYER PHYSICS MOVEMENT ---
-    if (
-      playerCollider &&
-      player &&
-      player.controls &&
-      player.controls.isLocked
-    ) {
-      // Get forward/right vectors from camera
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      forward.y = 0;
-      forward.normalize();
-      const right = new THREE.Vector3();
-      right.crossVectors(forward, camera.up).normalize();
-
-      // turn on light when player is close enough
-      const lightActivationDistance = 7; // Adjust as needed
+    // update lights based on proximity
+    if (playerCollider) {
+      const lightActivationDistance = 9; // adjust to taste
       for (const light of ceilingLights) {
         const distanceToPlayer = light.position.distanceTo(
           playerCollider.position,
         );
         light.intensity = distanceToPlayer < lightActivationDistance ? 20.8 : 0;
       }
+    }
 
-      // Calculate desired velocity
-      let velocity = new THREE.Vector3();
-      // Use player config for movement speed ONLY (no fallback)
-      const walkSpeed = player?.config?.walkAcceleration;
-      const sprintSpeed = player?.config?.sprintAcceleration;
-      const speed = movement.sprint ? sprintSpeed : walkSpeed;
-      if (movement.forward) velocity.add(forward);
-      if (movement.backward) velocity.sub(forward);
-      if (movement.left) velocity.sub(right);
-      if (movement.right) velocity.add(right);
-      if (velocity.lengthSq() > 0 && typeof speed === "number")
-        velocity.normalize().multiplyScalar(speed);
-
-      // Set collider velocity (keep y velocity for gravity/jump)
-      const body = playerCollider.body;
-      if (body) {
-        const currentVel = body.velocity;
-        body.setVelocity(velocity.x, currentVel.y, velocity.z);
-        // Moving over uneven terrain can keep Y velocity slightly non-zero.
-        const now = performance.now();
-        const isGroundedNow = Math.abs(currentVel.y) < 1.0;
-        if (isGroundedNow) lastGroundedAt = now;
-        const canJumpNow = now - lastGroundedAt < 120;
-
-        if (movement.jump && canJumpNow) {
-          body.setVelocity(velocity.x, 20, velocity.z);
-          movement.jump = false;
-          lastGroundedAt = 0;
-        }
-      }
-
-      // Camera/player follows the collider exactly (no extra offset)
-      camera.position.copy(playerCollider.position);
-      if (player.controls.getObject) {
-        player.controls.getObject().position.copy(playerCollider.position);
-      }
+    // delegate movement & camera syncing to player module
+    if (typeof updatePlayer === "function") {
+      updatePlayer(delta);
     }
 
     // Update physics

@@ -37,16 +37,53 @@ export async function createPlayer({
 
   // configuration constants (kept here so main.js only touches radius)
   const PLAYER_HEIGHT = 1.6;
-  const JUMP_SPEED = playerOptions.jumpSpeed ?? 8;
+  const JUMP_SPEED = playerOptions.jumpSpeed ?? 2;
   const WALK_ACCELERATION = playerOptions.walkAcceleration ?? 5;
   const SPRINT_ACCELERATION = playerOptions.sprintAcceleration ?? 10;
   const MOVEMENT_DAMPING = 20;
+
+  // state used by movement code and returned for debugging if caller wants it
+  const movement = {
+    forward: false,
+    backward: false,
+    left: false,
+    right: false,
+    jump: false,
+    canJump: true,
+    sprint: false,
+  };
+
+  // keep track of when the capsule last touched ground for jump logic
+  let lastGroundedAt = 0;
+
+  // keyboard input helpers (WASD + jump/sprint)
+  const onKeyDown = (e) => {
+    if (e.code === "KeyW") movement.forward = true;
+    if (e.code === "KeyS") movement.backward = true;
+    if (e.code === "KeyA") movement.left = true;
+    if (e.code === "KeyD") movement.right = true;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
+      movement.sprint = true;
+    if (e.code === "Space") movement.jump = true;
+  };
+  const onKeyUp = (e) => {
+    if (e.code === "KeyW") movement.forward = false;
+    if (e.code === "KeyS") movement.backward = false;
+    if (e.code === "KeyA") movement.left = false;
+    if (e.code === "KeyD") movement.right = false;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight")
+      movement.sprint = false;
+    if (e.code === "Space") movement.jump = false;
+  };
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
 
   // create capsule:
   const playerCapsuleHeight = PLAYER_HEIGHT - 2 * capsuleRadius;
   const playerStart = {
     x: 0,
-    y: (heightBounds.max ?? 0) + 5,
+    // ensure heightBounds.max is used then add player height & a margin
+    y: (heightBounds.max ?? 0) + PLAYER_HEIGHT + 1,
     z: 0,
   };
 
@@ -133,5 +170,61 @@ export async function createPlayer({
     dynamicCapsule: playerCollider,
   });
 
-  return { playerCollider, player, PLAYER_HEIGHT };
+  // update() will be called every frame by the caller; it drives physics based
+  // movement, jumping, and keeps the camera/controller synced with the capsule.
+  function update(delta) {
+    if (
+      !playerCollider ||
+      !player ||
+      !player.controls ||
+      !player.controls.isLocked
+    ) {
+      return;
+    }
+
+    // movement vectors relative to camera orientation
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
+    const right = new THREE.Vector3();
+    right.crossVectors(forward, camera.up).normalize();
+
+    // desired horizontal velocity
+    let velocity = new THREE.Vector3();
+    const walkSpeed = player?.config?.walkAcceleration;
+    const sprintSpeed = player?.config?.sprintAcceleration;
+    const speed = movement.sprint ? sprintSpeed : walkSpeed;
+    if (movement.forward) velocity.add(forward);
+    if (movement.backward) velocity.sub(forward);
+    if (movement.left) velocity.sub(right);
+    if (movement.right) velocity.add(right);
+    if (velocity.lengthSq() > 0 && typeof speed === "number")
+      velocity.normalize().multiplyScalar(speed);
+
+    const body = playerCollider.body;
+    if (body) {
+      const currentVel = body.velocity;
+      body.setVelocity(velocity.x, currentVel.y, velocity.z);
+      const now = performance.now();
+      const isGroundedNow = Math.abs(currentVel.y) < 1.0;
+      if (isGroundedNow) lastGroundedAt = now;
+      const canJumpNow = now - lastGroundedAt < 120;
+      if (movement.jump && canJumpNow) {
+        // use the configured jump speed so caller can adjust gravity
+        body.setVelocity(velocity.x, JUMP_SPEED, velocity.z);
+        movement.jump = false;
+        lastGroundedAt = 0;
+      }
+    }
+
+    // make camera / controls follow the capsule
+    camera.position.copy(playerCollider.position);
+    if (player.controls.getObject) {
+      player.controls.getObject().position.copy(playerCollider.position);
+    }
+  }
+
+  // caller may want the movement object or update routine too
+  return { playerCollider, player, PLAYER_HEIGHT, movement, update };
 }

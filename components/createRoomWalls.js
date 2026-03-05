@@ -26,12 +26,18 @@ async function buildMaterial(textureConfig = {}, repeat = 1) {
 
   const loadTexture = async (path, { isColor = false } = {}) => {
     if (!path) return null;
-    const tex = await textureLoader.loadAsync(path);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(repeat, repeat);
-    if (isColor) tex.encoding = THREE.sRGBEncoding;
-    return tex;
+    try {
+      const tex = await textureLoader.loadAsync(path);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(repeat, repeat);
+      if (isColor) tex.encoding = THREE.sRGBEncoding;
+      return tex;
+    } catch (err) {
+      // sometimes a path is wrong or file missing; warn and continue with null
+      console.warn("texture load failed", path, err);
+      return null;
+    }
   };
 
   const [
@@ -172,4 +178,3 @@ export async function createRoomWalls({
     wallHeight,
   };
 }
-``;

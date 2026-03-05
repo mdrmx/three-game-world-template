@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { ExtendedObject3D } from "@enable3d/ammo-physics";
 
 // Optionally pass AmmoPhysics instance for physics bounding box
 // options object may include:
@@ -116,49 +117,34 @@ export async function loadModel(
       model.quaternion.copy(finalQuat);
 
       if (physics) {
-        // Allow static or dynamic by mass option (default: dynamic)
+        // Use ExtendedObject3D wrapper to hold model and physics body
         const mass = typeof options.mass === "number" ? options.mass : 10;
-        collider = physics.add.box(
-          {
-            width: size.x || 1,
-            height: size.y || 1,
-            depth: size.z || 1,
-            x: colliderPosition.x,
-            y: colliderPosition.y + (size.y || 1) / 2,
-            z: colliderPosition.z,
-            mass,
-          },
-          { lambert: { color: 0xff0000, transparent: true, opacity: 0 } },
-        );
-        // centre geometry inside collider
-        model.position.set(0, -center.y, 0);
-        // if a collider offset was supplied, move the model back the other way
-        model.position.add(colliderOff.clone().negate());
-        // then add any explicit model offset relative to base position
-        model.position.add(modelOff);
-        // ensure collider shares model rotation
-        if (finalQuat) {
-          collider.quaternion.copy(finalQuat);
-        }
-
-        collider.add(model);
-        collider.position.set(
+        const wrapper = new ExtendedObject3D();
+        // position wrapper so its bottom sits at the desired baseY
+        wrapper.position.set(
           colliderPosition.x,
           colliderPosition.y + (size.y || 1) / 2,
           colliderPosition.z,
         );
-        // Hide collider visually
-        const materials =
-          Array.isArray(collider.material) ?
-            collider.material
-          : [collider.material];
-        materials.forEach((mat) => {
-          if (!mat) return;
-          mat.transparent = true;
-          mat.opacity = 0;
-          mat.depthWrite = false;
+        if (finalQuat) wrapper.quaternion.copy(finalQuat);
+
+        // centre model geometry inside wrapper
+        model.position.set(0, -center.y, 0);
+        model.position.add(colliderOff.clone().negate());
+        model.position.add(modelOff);
+        wrapper.add(model);
+
+        scene.add(wrapper);
+
+        physics.add.existing(wrapper, {
+          shape: "convex",
+          width: size.x || 1,
+          height: size.y || 1,
+          depth: size.z || 1,
+          mass,
         });
-        scene.add(collider);
+
+        collider = wrapper;
       } else {
         // Place model at requested world position plus any modelOffset
         const worldPos = basePos.clone().add(modelOff);
