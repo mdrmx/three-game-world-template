@@ -36,11 +36,27 @@ export async function createPlayer({
   }
 
   // configuration constants (kept here so main.js only touches radius)
-  const PLAYER_HEIGHT = 1.6;
+  // expose player height for camera/controls.  you can also specify a
+  // ``capsuleHeight`` option which is interpreted as the **total** height of
+  // the physics capsule (cylinder + 2 hemisphere radii).  That makes the
+  // behaviour intuitive: increasing the radius will *not* change the overall
+  // height, the cylinder length is adjusted automatically.  If you instead
+  // want to control the radius, provide ``capsuleRadius`` as well.
+  const PLAYER_HEIGHT = playerOptions.playerHeight ?? 1.6;
+  const OVERRIDE_TOTAL_HEIGHT =
+    typeof playerOptions.capsuleHeight === "number" ?
+      playerOptions.capsuleHeight
+    : null;
+  const OVERRIDE_RADIUS =
+    typeof playerOptions.capsuleRadius === "number" ?
+      playerOptions.capsuleRadius
+    : null;
   const JUMP_SPEED = playerOptions.jumpSpeed ?? 2;
   const WALK_ACCELERATION = playerOptions.walkAcceleration ?? 5;
   const SPRINT_ACCELERATION = playerOptions.sprintAcceleration ?? 10;
   const MOVEMENT_DAMPING = 20;
+  // allow shifting the camera vertically relative to collider
+  const CAMERA_Y_OFFSET = playerOptions.cameraYOffset ?? 0;
 
   // state used by movement code and returned for debugging if caller wants it
   const movement = {
@@ -78,12 +94,47 @@ export async function createPlayer({
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
 
-  // create capsule:
-  const playerCapsuleHeight = PLAYER_HEIGHT - 2 * capsuleRadius;
+  // compute final radius and cylinder height. if the caller specified a
+  // total capsule height we honour it exactly; the cylinder is adjusted
+  // to keep the total constant whenever the radius changes. radius may also
+  // be overridden independently.
+  if (OVERRIDE_RADIUS !== null) {
+    capsuleRadius = OVERRIDE_RADIUS;
+  }
+
+  // ensure radius fits within the visual player height
+  if (PLAYER_HEIGHT < 2 * capsuleRadius) {
+    console.warn(
+      `[createPlayer] requested HEIGHT ${PLAYER_HEIGHT} < 2*radius (${capsuleRadius}), ` +
+        `reducing radius to ${PLAYER_HEIGHT / 2}`,
+    );
+    capsuleRadius = PLAYER_HEIGHT / 2;
+  }
+
+  let playerCapsuleHeight;
+  if (OVERRIDE_TOTAL_HEIGHT !== null) {
+    const total = OVERRIDE_TOTAL_HEIGHT;
+    if (total < 2 * capsuleRadius) {
+      console.warn(
+        `[createPlayer] requested capsuleHeight ${total} < 2*radius (${capsuleRadius}), ` +
+          `reducing radius to ${total / 2}`,
+      );
+      capsuleRadius = total / 2;
+    }
+    playerCapsuleHeight = Math.max(0, total - 2 * capsuleRadius);
+  } else {
+    playerCapsuleHeight = Math.max(0, PLAYER_HEIGHT - 2 * capsuleRadius);
+  }
   const playerStart = {
     x: 0,
-    // ensure heightBounds.max is used then add player height & a margin
-    y: (heightBounds.max ?? 0) + PLAYER_HEIGHT + 1,
+    // spawn so bottom of capsule (or camera, whichever is taller) sits just
+    // above terrain. this uses the larger of the collider height and the
+    // visual player height to avoid launching you high when only PLAYER_HEIGHT
+    // is increased.
+    y:
+      (heightBounds.max ?? 0) +
+      Math.max(playerCapsuleHeight, PLAYER_HEIGHT) / 2 +
+      1, // one unit of clearance above ground
     z: 0,
   };
 
@@ -218,10 +269,16 @@ export async function createPlayer({
       }
     }
 
-    // make camera / controls follow the capsule
+    // make camera / controls follow the capsule, with optional vertical offset
     camera.position.copy(playerCollider.position);
+    if (CAMERA_Y_OFFSET) {
+      camera.position.y += CAMERA_Y_OFFSET;
+    }
     if (player.controls.getObject) {
       player.controls.getObject().position.copy(playerCollider.position);
+      if (CAMERA_Y_OFFSET) {
+        player.controls.getObject().position.y += CAMERA_Y_OFFSET;
+      }
     }
   }
 
