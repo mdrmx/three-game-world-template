@@ -28,6 +28,8 @@ export async function createPlayer({
   capsuleRadius = 0.4,
   floorLevel = 0,
   playerOptions = {},
+  // optional spawn position to place the player at a specific location
+  spawnPosition = null, // {x,y,z} or null to compute from terrain
 } = {}) {
   if (!scene || !physics || !heightBounds || !camera || !renderer) {
     throw new Error(
@@ -125,17 +127,19 @@ export async function createPlayer({
   } else {
     playerCapsuleHeight = Math.max(0, PLAYER_HEIGHT - 2 * capsuleRadius);
   }
+  // decide where the player should start. the caller can specify a
+  // custom `spawnPosition` object with x/z (and optionally y) to override
+  // the default behaviour. if y is omitted we still compute a sensible height
+  // above the terrain so the capsule doesn't start buried.
+  const defaultY =
+    (heightBounds.max ?? 0) +
+    Math.max(playerCapsuleHeight, PLAYER_HEIGHT) / 2 +
+    1; // one unit of clearance above ground
+
   const playerStart = {
-    x: 0,
-    // spawn so bottom of capsule (or camera, whichever is taller) sits just
-    // above terrain. this uses the larger of the collider height and the
-    // visual player height to avoid launching you high when only PLAYER_HEIGHT
-    // is increased.
-    y:
-      (heightBounds.max ?? 0) +
-      Math.max(playerCapsuleHeight, PLAYER_HEIGHT) / 2 +
-      1, // one unit of clearance above ground
-    z: 0,
+    x: spawnPosition?.x ?? 0,
+    z: spawnPosition?.z ?? 0,
+    y: typeof spawnPosition?.y === "number" ? spawnPosition.y : defaultY,
   };
 
   const playerCollider = physics.add.capsule(

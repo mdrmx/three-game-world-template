@@ -106,14 +106,15 @@ PhysicsLoader("/ammo", async () => {
   // });
 
   // ------ Player SETUP ------ //
-  // build player capsule and first-person controller; radius is the only
-  // parameter required by` main.
+  // specify a spawn point if you want to start somewhere other than the
+  // origin; y is optional and computed from the terrain if omitted.
+  const playerSpawn = { x: 20, z: 0, y: 3 };
   const playerCapsuleRadius = 0.2; // <--- modify this value as needed
   // Set your desired speeds here:
   const walkAcceleration = 4; // Change this value for walk speed
   const sprintAcceleration = 8; // Change this value for sprint speed
   const jumpSpeed = 5; // Change this value for jump speed
-  const playerHeight = 0.8;
+  const playerHeight = 0.6;
 
   const {
     playerCollider,
@@ -135,6 +136,7 @@ PhysicsLoader("/ammo", async () => {
       playerHeight,
       cameraYOffset: playerHeight + 0.03, // Camera height is at top of capsule
     },
+    spawnPosition: playerSpawn,
   });
 
   // Load animated models and add to scene
@@ -143,7 +145,6 @@ PhysicsLoader("/ammo", async () => {
     "hut.glb",
     "house.glb",
     "cat_statue/concrete_cat_statue_4k.gltf",
-    ``,
   ];
   const ANIMATION_PLAYBACK_RATE = 0.5; // 1 = source speed, <1 = slower
 
