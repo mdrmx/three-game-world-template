@@ -5,6 +5,10 @@ import { createScene } from "./components/createScene.js"; // Scene/camera/rende
 import { loadModel } from "./components/modelLoader.js"; // GLTF model loader
 import { createRoomWalls } from "./components/createRoomWalls.js"; // room geometry with optional textures
 import { createPlayer } from "./components/playerSetup.js"; // encapsulated player/physics setup
+import {
+  createPointLights,
+  createCeilingLights,
+} from "./components/createLights.js"; // helpers for adding lights
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"; // Three.js GLTF loader
 // physics
 import { AmmoPhysics, PhysicsLoader } from "@enable3d/ammo-physics";
@@ -19,16 +23,18 @@ PhysicsLoader("/ammo", async () => {
 
   const DEBUG_LOG_MOVEMENT = false; // Set to true to enable console logging of player movement data for debugging
 
-  // ------ ENVIRONMENT SETUP ------
+  // ------ ENVIRONMENT SETUP ------ //
   // Create scene, camera, renderer
   ({ scene, camera, renderer } = await createScene());
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; // for example
+  renderer.toneMappingExposure = 0.5; // <–– 1 is “normal”, <1 makes the HDRI darker
 
   // Set up physics
   const physics = new AmmoPhysics(scene);
   if (DEBUG_LOG_MOVEMENT) physics.debug?.enable();
 
   // Set up environment textures and terrain
-  const hdrPath = "textures/hdr/sky2.hdr"; // HDRI for sky background and lighting
+  const hdrPath = "textures/hdr/sky_night.hdr"; // HDRI for sky background and lighting
   // const hdrPath = ""; // HDRI for sky background and lighting
   const texName = "rocks"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
   const texturePaths = {
@@ -84,14 +90,31 @@ PhysicsLoader("/ammo", async () => {
   //   ceilingTextures: {},
   // });
 
+  // // optional helper to create a ceiling grid of spotlights (n×n):
+  // let ceilingLights = [];
+
+  // ceilingLights = createCeilingLights(scene, {
+  //   ceilingSize,
+  //   ceilingY,
+  //   wallThickness,
+  //   numLightsPerSide: 4,
+  //   color: 0xffffff,
+  //   intensity: 200,
+  //   distance: 25,
+  //   decay: 2,
+  //   showHelpers: true, // toggle to see helper spheres
+  // });
+
+  // ------ Player SETUP ------ //
   // build player capsule and first-person controller; radius is the only
-  // parameter required by main.
+  // parameter required by` main.
   const playerCapsuleRadius = 0.2; // <--- modify this value as needed
   // Set your desired speeds here:
   const walkAcceleration = 4; // Change this value for walk speed
   const sprintAcceleration = 8; // Change this value for sprint speed
   const jumpSpeed = 5; // Change this value for jump speed
-  const playerHeight = 0.6;
+  const playerHeight = 0.8;
+
   const {
     playerCollider,
     PLAYER_HEIGHT: _PLAYER_HEIGHT,
@@ -116,20 +139,24 @@ PhysicsLoader("/ammo", async () => {
 
   // Load animated models and add to scene
   const loader = new GLTFLoader();
-  const modelNames = ["hut", "house"];
+  const modelNames = [
+    "hut.glb",
+    "house.glb",
+    "cat_statue/concrete_cat_statue_4k.gltf",
+  ];
   const ANIMATION_PLAYBACK_RATE = 0.5; // 1 = source speed, <1 = slower
 
-  const pathToModel = `/models/house.glb`;
+  const pathToModel = `/models/${modelNames[1]}`;
   // Place model at center of room, slightly above floor
   const centerY = -3.9; // Adjust if model is below floor
-  const position = new THREE.Vector3(20, centerY, 0);
-  const scale = 19; // Adjust based on model size and desired scale in scene
+  const modelPosition = new THREE.Vector3(20, centerY, 0);
+  const scale = 18; // Adjust based on model size and desired scale in scene
   let mass = 0; // Static by default
   const { model, mixer, activeAction, collider } = await loadModel(
     loader,
     pathToModel,
     scale,
-    position,
+    modelPosition,
     scene,
     physics,
     {
@@ -164,79 +191,47 @@ PhysicsLoader("/ammo", async () => {
     activeAction,
     collider,
   });
-  // for (const name of modelNames) {
-  //   const pathtoModel = `public/models/${name}.glb`;
-  //   // Place models at random X/Z positions
-  //   const randX = Math.random() * 200 - 50;
-  //   const randZ = Math.random() * 100 - 50;
-  //   const position = new THREE.Vector3(randX, -1, randZ);
-  //   // Set mass: hut static, house dynamic (example)
-  //   let mass = 0;
-  //   if (name === "hut") mass = 0; // static
-  //   if (name === "house") mass = 0; // dynamic (default)
-  //   const { model, mixer, activeAction, collider } = await loadModel(
-  //     loader,
-  //     pathtoModel,
-  //     22,
-  //     position,
-  //     scene,
-  //     physics,
-  //     { mass },
-  //   );
-  //   if (mixer && activeAction) {
-  //     activeAction.setEffectiveTimeScale(ANIMATION_PLAYBACK_RATE);
-  //   }
-  //   models.push({ name, model, mixer, activeAction, collider });
-  // }
 
   // add point lights across the ceiling as if it were a gallery space
   // Add ambient light for general illumination
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Soft white light
-  scene.add(ambientLight);
+  // const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Soft white light
+  // scene.add(ambientLight);
 
-  let ceilingLights = [];
+  let lights = [];
   const lightColor = 0xffffff;
   const lightIntensity = 0;
-
   const lightDistance = 25;
   const lightDecay = 2;
 
-  // const numLightsPerSide = 4;
-  // // Use ceilingSize[0] for X, ceilingSize[2] for Z
-  // for (let i = 0; i < numLightsPerSide; i++) {
-  //   for (let j = 0; j < numLightsPerSide; j++) {
-  //     const x =
-  //       -ceilingSize[0] / 2 +
-  //       (ceilingSize[0] / (numLightsPerSide + 1)) * (i + 1);
-  //     const z =
-  //       -ceilingSize[2] / 2 +
-  //       (ceilingSize[2] / (numLightsPerSide + 1)) * (j + 1);
-  //     const yOffset = ceilingY - wallThickness / 2 + 0.1;
-  //     const light = new THREE.SpotLight(
-  //       lightColor,
-  //       lightIntensity, // Higher intensity for visible beams
-  //       lightDistance, // Longer distance
-  //       lightDecay,
-  //     );
-  //     light.position.set(x, yOffset, z);
-  //     light.angle = Math.PI / 6.5; // Narrow beam
-  //     light.penumbra = 0.4; // Soft edge
-  //     light.castShadow = true;
+  let pointLight = new THREE.PointLight(
+    lightColor,
+    lightIntensity,
+    lightDistance,
+    lightDecay,
+  );
+  pointLight.position.set(
+    modelPosition.x,
+    modelPosition.y + 7,
+    modelPosition.z,
+  );
+  pointLight.castShadow = true;
+  scene.add(pointLight);
 
-  //     ceilingLights.push(light);
-  //     // Set target to floor
-  //     const targetY = 0.1; // Slightly above floor
-  //     light.target.position.set(x, targetY, z);
-  //     scene.add(light.target);
-  //     scene.add(light);
-  //     // // Add a visible sphere to show the light position
-  //     const sphereGeometry = new THREE.SphereGeometry(0.15, 12, 12);
-  //     const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xffffaa });
-  //     const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-  //     sphere.position.set(x, yOffset, z);
-  //     scene.add(sphere);
-  //   }
-  // }
+  let pointLight2 = new THREE.PointLight(
+    lightColor,
+    lightIntensity + 100,
+    lightDistance,
+    lightDecay,
+  );
+  pointLight2.position.set(
+    modelPosition.x + 1,
+    modelPosition.y + 10,
+    modelPosition.z + 4,
+  );
+  pointLight2.castShadow = true;
+  scene.add(pointLight2);
+  lights.push(pointLight);
+  lights.push(pointLight2);
 
   // Start animation loop
   renderer.setAnimationLoop(animate);
@@ -252,12 +247,12 @@ PhysicsLoader("/ammo", async () => {
 
     // update lights based on proximity
     if (playerCollider) {
-      const lightActivationDistance = 9; // adjust to taste
-      for (const light of ceilingLights) {
+      const lightActivationDistance = 4; // adjust to taste
+      for (const light of lights) {
         const distanceToPlayer = light.position.distanceTo(
           playerCollider.position,
         );
-        light.intensity = distanceToPlayer < lightActivationDistance ? 20.8 : 0;
+        light.intensity = distanceToPlayer < lightActivationDistance ? 100 : 0;
       }
     }
 
