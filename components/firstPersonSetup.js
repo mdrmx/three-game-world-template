@@ -114,6 +114,7 @@ const DEFAULT_CONFIG = {
  */
 function buildPointerHint() {
   const element = document.createElement("div");
+  element.id = "pointer-lock-hint"; // ID for external control
   element.textContent =
     "Click for first-person (WASD + mouse, Space to jump, Esc to release)";
   element.style.position = "absolute";
@@ -127,6 +128,7 @@ function buildPointerHint() {
   element.style.background = "rgba(0, 0, 0, 0.6)";
   element.style.borderRadius = "6px";
   element.style.pointerEvents = "none";
+  element.style.display = "none"; // Hidden by default (editor mode starts)
   document.body.appendChild(element);
 
   return {
@@ -280,7 +282,10 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
   });
 
   controls.addEventListener("unlock", () => {
-    pointerHint.style.display = "";
+    // Only show hint if pointer lock is allowed (not in editor mode)
+    if (!window.__disablePointerLock) {
+      pointerHint.style.display = "";
+    }
     Object.keys(movement.moveState).forEach((key) => {
       movement.moveState[key] = false;
     });
@@ -299,6 +304,8 @@ export async function firstPersonSetup(camera, renderer, options = {}) {
   });
 
   pointerElement.addEventListener("click", () => {
+    // Check if pointer lock is allowed (disabled in editor mode)
+    if (window.__disablePointerLock) return;
     focusPointerTarget(pointerElement);
     if (!controls.isLocked) controls.lock();
   });

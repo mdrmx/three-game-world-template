@@ -10,6 +10,7 @@ import {
   createCeilingLights,
 } from "./components/createLights.js"; // helpers for adding lights
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"; // Three.js GLTF loader
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"; // Editor orbit controls
 // physics
 import { AmmoPhysics, PhysicsLoader } from "@enable3d/ammo-physics";
 
@@ -121,6 +122,7 @@ PhysicsLoader("/ammo", async () => {
 
   const {
     playerCollider,
+    player, // first-person controls wrapper
     PLAYER_HEIGHT: _PLAYER_HEIGHT,
     movement: _playerMovement, // unused helper state
     update: updatePlayer,
@@ -232,6 +234,102 @@ PhysicsLoader("/ammo", async () => {
   lights.push(pointLight);
   lights.push(pointLight2);
 
+  // ------ MODE SYSTEM (Editor / Play) ------ //
+  // Editor mode: OrbitControls for free camera movement
+  // Play mode: First-person pointer lock controls
+  let currentMode = "editor"; // "editor" or "play"
+
+  // Set up OrbitControls for editor mode
+  const orbitControls = new OrbitControls(camera, renderer.domElement);
+  orbitControls.enableDamping = true;
+  orbitControls.dampingFactor = 0.05;
+  orbitControls.screenSpacePanning = true;
+  orbitControls.minDistance = 1;
+  orbitControls.maxDistance = 500;
+  orbitControls.maxPolarAngle = Math.PI / 2 + 0.1; // Slightly below horizon
+  // Position camera for editor view
+  camera.position.set(playerSpawn.x, playerSpawn.y + 20, playerSpawn.z + 30);
+  orbitControls.target.set(playerSpawn.x, playerSpawn.y, playerSpawn.z);
+  orbitControls.update();
+
+  // Mode indicator UI
+  const modeIndicator = document.createElement("div");
+  modeIndicator.style.cssText = `
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    padding: 8px 16px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    font-family: sans-serif;
+    font-size: 14px;
+    border-radius: 4px;
+    z-index: 1000;
+  `;
+  document.body.appendChild(modeIndicator);
+
+  function updateModeIndicator() {
+    modeIndicator.textContent =
+      currentMode === "editor" ?
+        "EDITOR MODE (Press L for Play)"
+      : "PLAY MODE (Press L for Editor)";
+  }
+  updateModeIndicator();
+
+  // Toggle between modes with L key
+  function switchToEditorMode() {
+    currentMode = "editor";
+    window.__disablePointerLock = true; // Prevent click-to-lock in editor
+    orbitControls.enabled = true;
+    // Hide pointer lock hint
+    const hint = document.getElementById("pointer-lock-hint");
+    if (hint) hint.style.display = "none";
+    // Unlock pointer if locked
+    if (player?.controls?.isLocked) {
+      player.controls.unlock();
+    }
+    // Position orbit camera at current player position, looking at player
+    if (playerCollider) {
+      const pos = playerCollider.position;
+      camera.position.set(pos.x, pos.y + 15, pos.z + 20);
+      orbitControls.target.set(pos.x, pos.y, pos.z);
+      orbitControls.update();
+    }
+    updateModeIndicator();
+  }
+
+  function switchToPlayMode() {
+    currentMode = "play";
+    window.__disablePointerLock = false; // Allow pointer lock in play mode
+    orbitControls.enabled = false;
+    // Show pointer lock hint
+    const hint = document.getElementById("pointer-lock-hint");
+    if (hint) hint.style.display = "";
+    // Position camera at player capsule
+    if (playerCollider) {
+      camera.position.copy(playerCollider.position);
+      camera.position.y += playerHeight + 0.03;
+    }
+    // Lock pointer for first-person controls
+    if (player?.controls && !player.controls.isLocked) {
+      player.controls.lock();
+    }
+    updateModeIndicator();
+  }
+
+  // Initialize in editor mode
+  window.__disablePointerLock = true;
+
+  window.addEventListener("keydown", (event) => {
+    if (event.code === "KeyL") {
+      if (currentMode === "editor") {
+        switchToPlayMode();
+      } else {
+        switchToEditorMode();
+      }
+    }
+  });
+
   // Start animation loop
   renderer.setAnimationLoop(animate);
 
@@ -245,28 +343,35 @@ PhysicsLoader("/ammo", async () => {
       if (model.mixer) model.mixer.update(delta);
     }
 
-    // Essential component: delegate movement & camera syncing to player module
-    if (typeof updatePlayer === "function") {
-      updatePlayer(delta);
-    }
-
-    // Custom code: Example of dynamic light intensity based on player proximity to the model
-    // update lights based on proximity
-    if (playerCollider) {
-      const lightActivationDistance = 4; // adjust to taste
-      for (const light of lights) {
-        const distanceToPlayer = light.position.distanceTo(
-          playerCollider.position,
-        );
-        light.intensity = distanceToPlayer < lightActivationDistance ? 100 : 0;
+    // Mode-specific updates
+    if (currentMode === "editor") {
+      // Editor mode: update orbit controls
+      orbitControls.update();
+    } else {
+      // Play mode: update player movement and physics
+      if (typeof updatePlayer === "function") {
+        updatePlayer(delta);
       }
-    }
 
-    // Essential component:Update physics
-    // Clamp delta to prevent physics instability on frame drops
-    const clampedDelta = Math.min(delta, 1 / 30); // Cap at ~30fps equivalent
-    physics.update(clampedDelta * 1000);
-    physics.updateDebugger();
+      // Custom code: Example of dynamic light intensity based on player proximity to the model
+      // update lights based on proximity
+      if (playerCollider) {
+        const lightActivationDistance = 4; // adjust to taste
+        for (const light of lights) {
+          const distanceToPlayer = light.position.distanceTo(
+            playerCollider.position,
+          );
+          light.intensity =
+            distanceToPlayer < lightActivationDistance ? 100 : 0;
+        }
+      }
+
+      // Essential component:Update physics
+      // Clamp delta to prevent physics instability on frame drops
+      const clampedDelta = Math.min(delta, 1 / 30); // Cap at ~30fps equivalent
+      physics.update(clampedDelta * 1000);
+      physics.updateDebugger();
+    }
 
     // Essential component: Render the scene
     renderer.render(scene, camera);
