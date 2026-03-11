@@ -11,6 +11,7 @@ import {
 } from "./components/createLights.js"; // helpers for adding lights
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"; // Three.js GLTF loader
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"; // Editor orbit controls
+import { picker } from "./components/picker.js"; // Object selection for editor
 // physics
 import { AmmoPhysics, PhysicsLoader } from "@enable3d/ammo-physics";
 
@@ -52,16 +53,16 @@ PhysicsLoader("/ammo", async () => {
 
   // Generate terrain and get height data
   // Exaggerate terrain height for debugging
-  const planeSize = 400; // Size of terrain plane (must match createEnvironment config)
+  const planeSize = 100; // Size of terrain plane (must match createEnvironment config)
   const { heightBounds, terrainData: terrainDataLocal } =
     await createEnvironment(
       scene,
       hdrPath,
       texturePaths,
       {
-        textureRepeat: 3, // Tiling of floor textures
+        textureRepeat: 2, // Tiling of floor textures
         planeSize: planeSize, // Size of terrain
-        segments: 60, // Grid resolution
+        segments: 10, // Grid resolution
         heightScale: 3.2, // Exaggerated vertical exaggeration for debug
         heightBias: -3, // Lower terrain for debug
       },
@@ -182,6 +183,12 @@ PhysicsLoader("/ammo", async () => {
     });
     console.log("[DEBUG] Model loaded:", model);
   }
+
+  // Give the collider/model a name for editor selection display
+  if (collider) {
+    collider.name = modelNames[1].replace(/\.[^.]+$/, ""); // Use filename without extension
+  }
+
   if (mixer && activeAction) {
     activeAction.setEffectiveTimeScale(ANIMATION_PLAYBACK_RATE);
   }
@@ -252,6 +259,54 @@ PhysicsLoader("/ammo", async () => {
   orbitControls.target.set(playerSpawn.x, playerSpawn.y, playerSpawn.z);
   orbitControls.update();
 
+  // ------ OBJECT SELECTION (Editor Mode) ------ //
+  const objectPicker = picker(renderer, scene, camera);
+  let selectedObject = null;
+
+  // Selection info UI
+  const selectionInfo = document.createElement("div");
+  selectionInfo.style.cssText = `
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    padding: 8px 16px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    font-family: sans-serif;
+    font-size: 12px;
+    border-radius: 4px;
+    z-index: 1000;
+    display: none;
+  `;
+  document.body.appendChild(selectionInfo);
+
+  function updateSelectionInfo() {
+    if (selectedObject && currentMode === "editor") {
+      const name = selectedObject.name || selectedObject.type || "Object";
+      const pos = selectedObject.position;
+      selectionInfo.innerHTML = `
+        <strong>Selected:</strong> ${name}<br>
+        <strong>Position:</strong> x: ${pos.x.toFixed(2)}, y: ${pos.y.toFixed(2)}, z: ${pos.z.toFixed(2)}
+      `;
+      selectionInfo.style.display = "block";
+    } else {
+      selectionInfo.style.display = "none";
+    }
+  }
+
+  objectPicker.onSelect((obj) => {
+    selectedObject = obj;
+    updateSelectionInfo();
+    if (obj) {
+      console.log("[Editor] Selected:", obj.name || obj.type, obj);
+    } else {
+      console.log("[Editor] Selection cleared");
+    }
+  });
+
+  // Enable picker by default for editor mode
+  objectPicker.setEnabled(true);
+
   // Mode indicator UI
   const modeIndicator = document.createElement("div");
   modeIndicator.style.cssText = `
@@ -281,6 +336,7 @@ PhysicsLoader("/ammo", async () => {
     currentMode = "editor";
     window.__disablePointerLock = true; // Prevent click-to-lock in editor
     orbitControls.enabled = true;
+    objectPicker.setEnabled(true); // Enable object selection
     // Hide pointer lock hint
     const hint = document.getElementById("pointer-lock-hint");
     if (hint) hint.style.display = "none";
@@ -296,12 +352,15 @@ PhysicsLoader("/ammo", async () => {
       orbitControls.update();
     }
     updateModeIndicator();
+    updateSelectionInfo();
   }
 
   function switchToPlayMode() {
     currentMode = "play";
     window.__disablePointerLock = false; // Allow pointer lock in play mode
     orbitControls.enabled = false;
+    objectPicker.setEnabled(false); // Disable object selection
+    selectionInfo.style.display = "none"; // Hide selection info
     // Show pointer lock hint
     const hint = document.getElementById("pointer-lock-hint");
     if (hint) hint.style.display = "";
@@ -345,8 +404,9 @@ PhysicsLoader("/ammo", async () => {
 
     // Mode-specific updates
     if (currentMode === "editor") {
-      // Editor mode: update orbit controls
+      // Editor mode: update orbit controls and picker
       orbitControls.update();
+      objectPicker.update();
     } else {
       // Play mode: update player movement and physics
       if (typeof updatePlayer === "function") {

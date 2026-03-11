@@ -19,7 +19,7 @@ import * as THREE from "three";
  *       the canvas is clicked/tapped and an object was hit.
  *   - dispose(): remove all event listeners when the picker is no longer needed.
  */
-export function picker(renderer, scene, camera) {
+export function picker(renderer, scene, camera, options = {}) {
   const canvas = renderer.domElement;
 
   const raycaster = new THREE.Raycaster();
@@ -27,6 +27,22 @@ export function picker(renderer, scene, camera) {
 
   // allow temporarily disabling the picker (e.g. during fpv mode)
   let enabled = true;
+
+  // filter function to determine if an object is selectable
+  // by default, exclude objects marked with userData.selectable = false
+  const selectableFilter =
+    options.selectableFilter ||
+    ((obj) => {
+      // Check if object or any parent is marked as not selectable
+      let current = obj;
+      while (current) {
+        if (current.userData && current.userData.selectable === false) {
+          return false;
+        }
+        current = current.parent;
+      }
+      return true;
+    });
 
   // utility: climb from any mesh to the object that was directly added to the
   // scene.  This helps when models are hierarchical and you want to treat the
@@ -84,8 +100,17 @@ export function picker(renderer, scene, camera) {
     if (!enabled) return null;
     raycaster.setFromCamera(normalizedPosition, camera);
     const intersects = raycaster.intersectObjects(scene.children, true);
-    let obj = intersects.length ? intersects[0].object : null;
-    if (obj) obj = rootFromObject(obj);
+
+    // Find first selectable object
+    let obj = null;
+    for (const intersect of intersects) {
+      const root = rootFromObject(intersect.object);
+      if (selectableFilter(root)) {
+        obj = root;
+        break;
+      }
+    }
+
     if (obj !== hoveredObject) {
       hoveredObject = obj;
       notifyHover(obj);
@@ -125,13 +150,24 @@ export function picker(renderer, scene, camera) {
     setPickPosition(event);
     raycaster.setFromCamera(pickPosition, camera);
     const intersects = raycaster.intersectObjects(scene.children, true);
-    if (intersects.length) {
-      let obj = intersects[0].object;
-      obj = rootFromObject(obj);
-      clickCallbacks.forEach((fn) => fn(obj, intersects[0]));
+
+    // Find first selectable object
+    let obj = null;
+    let hitIntersect = null;
+    for (const intersect of intersects) {
+      const root = rootFromObject(intersect.object);
+      if (selectableFilter(root)) {
+        obj = root;
+        hitIntersect = intersect;
+        break;
+      }
+    }
+
+    if (obj) {
+      clickCallbacks.forEach((fn) => fn(obj, hitIntersect));
       toggleSelection(obj);
     } else {
-      // click on empty space should clear selection
+      // click on empty space or non-selectable should clear selection
       toggleSelection(null);
     }
   }

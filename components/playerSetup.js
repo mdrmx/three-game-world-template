@@ -152,6 +152,9 @@ export async function createPlayer({
     { lambert: { color: 0x00ff00, transparent: true, opacity: 0 } },
   );
 
+  // Mark player as not selectable in editor
+  playerCollider.userData.selectable = false;
+
   // hide the visible geometry
   const playerMaterials =
     Array.isArray(playerCollider.material) ?

@@ -87,6 +87,7 @@ export async function createEnvironment(
   // Container for all tiles
   const floorGroup = new THREE.Group();
   floorGroup.name = "floorTiles";
+  floorGroup.userData.selectable = false; // Exclude floor from editor selection
 
   // Track global height bounds across all tiles
   let globalMinHeight = Infinity;
