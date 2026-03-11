@@ -162,17 +162,29 @@ export async function createEnvironment(
   // Add physics to the terrain mesh only after all geometry modifications
   if (physics) {
     physics.add.existing(mesh, { mass: 0, shape: "concave" }); // static body, use trimesh for deformed terrain
+
+    // Set collision margin to prevent tunneling
+    if (mesh.body && mesh.body.ammo) {
+      const shape = mesh.body.ammo.getCollisionShape();
+      if (shape && shape.setMargin) {
+        shape.setMargin(0.05);
+      }
+    }
+
     // Set collision group/mask for ground
     if (
       mesh.body &&
       mesh.body.setCollisionGroup &&
       mesh.body.setCollisionMask
     ) {
-      const COLLISION_GROUP_GROUND = 1 << 2;
       const COLLISION_GROUP_PLAYER = 1 << 0;
+      const COLLISION_GROUP_GROUND = 1 << 2;
+      const COLLISION_GROUP_OBJECT = 1 << 3;
       mesh.body.setCollisionGroup(COLLISION_GROUP_GROUND);
       mesh.body.setCollisionMask(
-        COLLISION_GROUP_PLAYER | COLLISION_GROUP_GROUND,
+        COLLISION_GROUP_PLAYER |
+          COLLISION_GROUP_GROUND |
+          COLLISION_GROUP_OBJECT,
       );
     }
   }

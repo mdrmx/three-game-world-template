@@ -144,6 +144,24 @@ export async function loadModel(
           mass,
         });
 
+        // Set collision group/mask for loaded models
+        if (
+          wrapper.body &&
+          wrapper.body.setCollisionGroup &&
+          wrapper.body.setCollisionMask
+        ) {
+          const COLLISION_GROUP_PLAYER = 1 << 0;
+          const COLLISION_GROUP_WALL = 1 << 1;
+          const COLLISION_GROUP_GROUND = 1 << 2;
+          const COLLISION_GROUP_OBJECT = 1 << 3;
+          wrapper.body.setCollisionGroup(COLLISION_GROUP_OBJECT);
+          wrapper.body.setCollisionMask(
+            COLLISION_GROUP_PLAYER |
+              COLLISION_GROUP_GROUND |
+              COLLISION_GROUP_OBJECT,
+          );
+        }
+
         collider = wrapper;
       } else {
         // Place model at requested world position plus any modelOffset

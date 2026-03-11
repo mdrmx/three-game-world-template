@@ -29,8 +29,11 @@ PhysicsLoader("/ammo", async () => {
   renderer.toneMapping = THREE.ACESFilmicToneMapping; // for example
   renderer.toneMappingExposure = 0.5; // <–– 1 is “normal”, <1 makes the HDRI darker
 
-  // Set up physics
-  const physics = new AmmoPhysics(scene);
+  // Set up physics with more substeps for reliable collision
+  const physics = new AmmoPhysics(scene, {
+    maxSubSteps: 4,
+    fixedTimeStep: 1 / 120,
+  });
   if (DEBUG_LOG_MOVEMENT) physics.debug?.enable();
 
   // Set up environment textures and terrain
@@ -57,7 +60,7 @@ PhysicsLoader("/ammo", async () => {
       {
         textureRepeat: 20, // Tiling of floor textures
         planeSize: planeSize, // Size of terrain
-        segments: 8, // Grid resolution
+        segments: 20, // Grid resolution
         heightScale: 9.2, // Exaggerated vertical exaggeration for debug
         heightBias: -7, // Lower terrain for debug
       },
@@ -260,7 +263,9 @@ PhysicsLoader("/ammo", async () => {
     }
 
     // Essential component:Update physics
-    physics.update(delta * 1000);
+    // Clamp delta to prevent physics instability on frame drops
+    const clampedDelta = Math.min(delta, 1 / 30); // Cap at ~30fps equivalent
+    physics.update(clampedDelta * 1000);
     physics.updateDebugger();
 
     // Essential component: Render the scene

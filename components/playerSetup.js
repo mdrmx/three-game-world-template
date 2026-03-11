@@ -164,7 +164,8 @@ export async function createPlayer({
     mat.depthWrite = false;
   });
 
-  // collision group/mask to interact with walls (group 1 = player, 2 = walls)
+  // collision group/mask to interact with walls, ground, and objects
+  // group 1 = player, 2 = walls, 4 = ground, 8 = objects
   if (
     playerCollider.body &&
     playerCollider.body.setCollisionGroup &&
@@ -172,9 +173,14 @@ export async function createPlayer({
   ) {
     const COLLISION_GROUP_PLAYER = 1 << 0;
     const COLLISION_GROUP_WALL = 1 << 1;
+    const COLLISION_GROUP_GROUND = 1 << 2;
+    const COLLISION_GROUP_OBJECT = 1 << 3;
     playerCollider.body.setCollisionGroup(COLLISION_GROUP_PLAYER);
     playerCollider.body.setCollisionMask(
-      COLLISION_GROUP_PLAYER | COLLISION_GROUP_WALL,
+      COLLISION_GROUP_PLAYER |
+        COLLISION_GROUP_WALL |
+        COLLISION_GROUP_GROUND |
+        COLLISION_GROUP_OBJECT,
     );
   }
 
@@ -206,8 +212,24 @@ export async function createPlayer({
     playerCollider.body &&
     typeof playerCollider.body.setRestitution === "function"
   ) {
-    playerCollider.body.setRestitution(20); // Set to your desired value
+    playerCollider.body.setRestitution(0); // Low restitution to prevent bouncing
   }
+
+  // Enable CCD (Continuous Collision Detection) to prevent tunneling through ground
+  if (playerCollider.body && playerCollider.body.ammo) {
+    const ammoBody = playerCollider.body.ammo;
+    // setCcdMotionThreshold: if the body moves more than this in one step, CCD kicks in
+    ammoBody.setCcdMotionThreshold(capsuleRadius * 0.5);
+    // setCcdSweptSphereRadius: the swept sphere used for CCD
+    ammoBody.setCcdSweptSphereRadius(capsuleRadius * 0.8);
+
+    // Set collision margin on capsule shape
+    const shape = ammoBody.getCollisionShape();
+    if (shape && shape.setMargin) {
+      shape.setMargin(0.04);
+    }
+  }
+
   // add capsule to scene
   scene.add(playerCollider);
 
@@ -259,6 +281,32 @@ export async function createPlayer({
 
     const body = playerCollider.body;
     if (body) {
+      // Safety check: teleport player back up if they fell through the ground
+      const minY = (heightBounds?.min ?? -10) - 5;
+      if (playerCollider.position.y < minY) {
+        console.warn("[Player] Fell through ground, resetting position");
+        body.setVelocity(0, 0, 0);
+        // Properly reset physics body position using Ammo.js transform
+        if (body.ammo) {
+          const transform = new Ammo.btTransform();
+          transform.setIdentity();
+          transform.setOrigin(
+            new Ammo.btVector3(playerStart.x, playerStart.y + 2, playerStart.z),
+          );
+          body.ammo.setWorldTransform(transform);
+          body.ammo.getMotionState().setWorldTransform(transform);
+          body.ammo.setLinearVelocity(new Ammo.btVector3(0, 0, 0));
+          body.ammo.setAngularVelocity(new Ammo.btVector3(0, 0, 0));
+          body.ammo.activate();
+        }
+        playerCollider.position.set(
+          playerStart.x,
+          playerStart.y + 2,
+          playerStart.z,
+        );
+        body.needUpdate = true;
+      }
+
       const currentVel = body.velocity;
       body.setVelocity(velocity.x, currentVel.y, velocity.z);
       const now = performance.now();
