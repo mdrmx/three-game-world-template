@@ -148,16 +148,19 @@ PhysicsLoader("/ammo", async () => {
   // Load animated models and add to scene
   const models = [];
   const loader = new GLTFLoader();
+
   const modelNames = [
     "hut.glb",
     "house.glb",
     "cat_statue/concrete_cat_statue_4k.gltf",
     "chair/mid_century_lounge_chair_1k.gltf",
     "jacaranda/jacaranda_tree_1k.gltf",
+    "fountain.glb",
   ];
 
-  const scales = [18, 18, 8, 1, 10]; // Adjust scales for each model as needed
-  const masses = [0, 0, 10, 10, 0]; // Static by default; adjust if you want physics interaction
+  const scales = [18, 18, 8, 1, 10, 8]; // Adjust scales for each model as needed
+  const masses = [0, 0, 10, 10, 0, 0]; // Static by default; adjust if you want physics interaction
+  const meshTypes = ["concave", "concave", "convex", "hull", "hull", "concave"]; // Types of meshes to include in colliders
 
   const positions = [
     new THREE.Vector3(0, -2.9, 0), // hut
@@ -165,9 +168,9 @@ PhysicsLoader("/ammo", async () => {
     new THREE.Vector3(-40, -1.9, 0), // cat statue
     new THREE.Vector3(-20, 2.9, -1), // chair
     new THREE.Vector3(-35, -2, -1), // tree
+    new THREE.Vector3(20, -4.5, 0), // fountain
   ];
 
-  const meshTypes = ["concave", "concave", "convex", "hull", "hull"]; // Types of meshes to include in colliders
   const ANIMATION_PLAYBACK_RATE = 0.5; // 1 = source speed, <1 = slower
 
   for (let i = 0; i < modelNames.length; i++) {
