@@ -86,6 +86,7 @@ export function createModeSystem({
     const body = object.body;
     const pos = object.position;
     const quat = object.quaternion;
+    const scale = object.scale;
 
     // Wake up the body if it was sleeping/frozen
     if (body.ammo) {
@@ -113,6 +114,40 @@ export function createModeSystem({
       body.ammo.setLinearVelocity(zeroVec);
       body.ammo.setAngularVelocity(zeroVec);
 
+      // Update collision shape scale
+      const collisionShape = body.ammo.getCollisionShape();
+      if (collisionShape) {
+        // Store original scale if not already stored
+        if (!object.userData._originalPhysicsScale) {
+          const currentScale = collisionShape.getLocalScaling();
+          object.userData._originalPhysicsScale = {
+            x: currentScale.x(),
+            y: currentScale.y(),
+            z: currentScale.z(),
+          };
+        }
+
+        // Apply the visual scale relative to original physics scale
+        const origPhysScale = object.userData._originalPhysicsScale;
+        const origVisScale = object.userData._originalScale || {
+          x: 1,
+          y: 1,
+          z: 1,
+        };
+
+        // Calculate new physics scale: original physics scale * (current vis scale / original vis scale)
+        const newScaleX = origPhysScale.x * (scale.x / (origVisScale.x || 1));
+        const newScaleY = origPhysScale.y * (scale.y / (origVisScale.y || 1));
+        const newScaleZ = origPhysScale.z * (scale.z / (origVisScale.z || 1));
+
+        const scaleVec = new Ammo.btVector3(newScaleX, newScaleY, newScaleZ);
+        collisionShape.setLocalScaling(scaleVec);
+        Ammo.destroy(scaleVec);
+
+        // Update AABB to reflect new size
+        physics.physicsWorld.updateSingleAabb(body.ammo);
+      }
+
       // Clean up Ammo objects to prevent memory leaks
       Ammo.destroy(transform);
       Ammo.destroy(origin);
@@ -123,25 +158,9 @@ export function createModeSystem({
     // Mark object as transformed in editor
     object.userData._editorTransformed = true;
 
-    // For scale changes, we need to recreate the collision shape
-    // Store the original scale to detect changes
+    // Store the original scale for reference
     if (!object.userData._originalScale) {
       object.userData._originalScale = object.scale.clone();
-    }
-
-    // Check if scale changed significantly
-    const origScale = object.userData._originalScale;
-    const scaleChanged =
-      Math.abs(object.scale.x - origScale.x) > 0.01 ||
-      Math.abs(object.scale.y - origScale.y) > 0.01 ||
-      Math.abs(object.scale.z - origScale.z) > 0.01;
-
-    if (scaleChanged) {
-      console.log(
-        "[Editor] Scale changed - physics collision shape needs recreation",
-      );
-      // Mark that physics body needs recreation
-      object.userData._physicsNeedsRecreation = true;
     }
 
     return true;
@@ -360,6 +379,24 @@ export function createModeSystem({
     }
 
     selectedObject = obj;
+
+    // Store original transform when first selected (before any edits)
+    if (obj && !obj.userData._originalScale) {
+      obj.userData._originalScale = obj.scale.clone();
+      // Also store original physics scale
+      if (obj.body?.ammo) {
+        const collisionShape = obj.body.ammo.getCollisionShape();
+        if (collisionShape) {
+          const currentScale = collisionShape.getLocalScaling();
+          obj.userData._originalPhysicsScale = {
+            x: currentScale.x(),
+            y: currentScale.y(),
+            z: currentScale.z(),
+          };
+        }
+      }
+    }
+
     updateSelectionInfo();
     updateTransformModeUI();
 

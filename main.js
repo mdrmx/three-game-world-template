@@ -186,15 +186,15 @@ PhysicsLoader("/ammo", async () => {
   // -------- MODEL SETUP ---------- //
   // ------------------------------- //
   // Consolidated model configuration - easier to maintain
-  const ANIMATION_PLAYBACK_RATE = 0.5; // 1 = source speed, <1 = slower
+  const ANIMATION_PLAYBACK_RATE = 1.0; // 1 = source speed, <1 = slower
   const modelConfigs = [
-    // {
-    //   path: "house.glb",
-    //   scale: 18,
-    //   mass: 0,
-    //   shape: "concave",
-    //   position: [-20, -4.9, 0],
-    // },
+    {
+      path: "rhino/source/rhinoThird_twoSevenNine_test.glb",
+      scale: 4,
+      mass: 1,
+      shape: "hull",
+      position: [10, 0, 0],
+    },
     {
       path: "cat_statue/concrete_cat_statue_4k.gltf",
       scale: 8,
