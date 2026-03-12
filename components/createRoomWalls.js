@@ -188,6 +188,8 @@ export async function createRoomWalls({
     );
     wallMesh.position.set(position.x, position.y, position.z);
     wallMesh.name = `wall_${config.key}`;
+    // Mark walls as non-selectable in editor mode
+    wallMesh.userData.selectable = false;
     scene.add(wallMesh);
 
     physics.add.existing(wallMesh, {
@@ -226,6 +228,8 @@ export async function createRoomWalls({
     );
     ceilingMesh.position.set(0, ceilingY, 0);
     ceilingMesh.name = "ceiling";
+    // Mark ceiling as non-selectable in editor mode
+    ceilingMesh.userData.selectable = false;
     scene.add(ceilingMesh);
 
     physics.add.existing(ceilingMesh, {

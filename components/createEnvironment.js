@@ -279,6 +279,8 @@ export async function createEnvironment(
     }
   }
 
+  // Mark floor as non-selectable in editor mode
+  floorGroup.userData.selectable = false;
   scene.add(floorGroup);
 
   // Build heightBounds

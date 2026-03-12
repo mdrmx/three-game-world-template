@@ -180,6 +180,7 @@ PhysicsLoader("/ammo", async () => {
     playerCollider,
     playerHeight,
     playerSpawn,
+    physics, // Pass physics for transform sync
   });
   // ------------------------------- //
   // -------- MODEL SETUP ---------- //

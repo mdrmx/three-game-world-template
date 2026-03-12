@@ -257,9 +257,12 @@ export function picker(renderer, scene, camera, options = {}) {
   }
 
   function toggleSelection(obj) {
+    // Helper to safely check if a mesh has emissive material
+    const hasEmissive = (mesh) => mesh?.material?.emissive !== undefined;
+
     if (selectedObject === obj) {
       // deselect: restore previous mesh if available
-      if (selectedHighlightMesh) {
+      if (selectedHighlightMesh && hasEmissive(selectedHighlightMesh)) {
         selectedHighlightMesh.material.emissive.setHex(
           selectedObjectSavedColor,
         );
@@ -272,18 +275,19 @@ export function picker(renderer, scene, camera, options = {}) {
     }
 
     // clear previous
-    if (selectedHighlightMesh) {
+    if (selectedHighlightMesh && hasEmissive(selectedHighlightMesh)) {
       selectedHighlightMesh.material.emissive.setHex(selectedObjectSavedColor);
     }
 
     if (obj) {
       selectedObject = obj;
       selectedHighlightMesh = findHighlightMesh(obj) || obj;
-      if (selectedHighlightMesh && selectedHighlightMesh.material) {
+      if (selectedHighlightMesh && hasEmissive(selectedHighlightMesh)) {
         selectedObjectSavedColor =
           selectedHighlightMesh.material.emissive.getHex();
         selectedHighlightMesh.material.emissive.setHex(0xffff00);
       } else {
+        selectedHighlightMesh = null;
         selectedObjectSavedColor = 0;
       }
     } else {
