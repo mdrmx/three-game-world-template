@@ -215,7 +215,7 @@ export async function createPlayer({
     playerCollider.body &&
     typeof playerCollider.body.setRestitution === "function"
   ) {
-    playerCollider.body.setRestitution(0); // Low restitution to prevent bouncing
+    playerCollider.body.setRestitution(2); // Low restitution to prevent bouncing
   }
 
   // Enable CCD (Continuous Collision Detection) to prevent tunneling through ground

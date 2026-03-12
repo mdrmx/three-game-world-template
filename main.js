@@ -20,7 +20,7 @@ PhysicsLoader("/ammo", async () => {
   // All code that uses Ammo/AmmoPhysics must be inside this callback!
   // Declare all variables locally to avoid ReferenceError
   let scene, camera, renderer, terrainData;
-  const models = [];
+
   const clock = new THREE.Clock();
 
   const DEBUG_LOG_MOVEMENT = false; // Set to true to enable console logging of player movement data for debugging
@@ -60,11 +60,11 @@ PhysicsLoader("/ammo", async () => {
       hdrPath,
       texturePaths,
       {
-        textureRepeat: 2, // Tiling of floor textures
+        textureRepeat: 1, // Tiling of floor textures
         planeSize: planeSize, // Size of terrain
-        segments: 10, // Grid resolution
-        heightScale: 3.2, // Exaggerated vertical exaggeration for debug
-        heightBias: -3, // Lower terrain for debug
+        segments: 1, // Grid resolution
+        heightScale: 4.2, // Exaggerated vertical exaggeration for debug
+        heightBias: -5, // Lower terrain for debug
       },
       physics,
     );
@@ -113,7 +113,7 @@ PhysicsLoader("/ammo", async () => {
   // ------ Player SETUP ------ //
   // specify a spawn point if you want to start somewhere other than the
   // origin; y is optional and computed from the terrain if omitted.
-  const playerSpawn = { x: 10, z: 0, y: 3 };
+  const playerSpawn = { x: -20, z: 0, y: 3 };
   const playerCapsuleRadius = 0.2; // <--- modify this value as needed
   // Set your desired speeds here:
   const walkAcceleration = 4; // Change this value for walk speed
@@ -146,60 +146,78 @@ PhysicsLoader("/ammo", async () => {
   });
 
   // Load animated models and add to scene
+  const models = [];
   const loader = new GLTFLoader();
   const modelNames = [
     "hut.glb",
     "house.glb",
     "cat_statue/concrete_cat_statue_4k.gltf",
+    "chair/mid_century_lounge_chair_1k.gltf",
+    "jacaranda/jacaranda_tree_1k.gltf",
   ];
+
+  const scales = [18, 18, 8, 1, 10]; // Adjust scales for each model as needed
+  const masses = [0, 0, 10, 10, 0]; // Static by default; adjust if you want physics interaction
+
+  const positions = [
+    new THREE.Vector3(0, -2.9, 0), // hut
+    new THREE.Vector3(-20, -4.9, 0), // house
+    new THREE.Vector3(-40, -1.9, 0), // cat statue
+    new THREE.Vector3(-20, 2.9, -1), // chair
+    new THREE.Vector3(-35, -2, -1), // tree
+  ];
+
+  const meshTypes = ["concave", "concave", "convex", "hull", "hull"]; // Types of meshes to include in colliders
   const ANIMATION_PLAYBACK_RATE = 0.5; // 1 = source speed, <1 = slower
 
-  const pathToModel = `/models/${modelNames[1]}`;
-  const modelPosition = new THREE.Vector3(20, -3.9, 0); // Place model
-  const scale = 18; // Adjust based on model size and desired scale in scene
-  let mass = 0; // Static by default
-  const { model, mixer, activeAction, collider } = await loadModel(
-    loader,
-    pathToModel,
-    scale,
-    modelPosition,
-    scene,
-    physics,
-    {
-      mass,
-      shape: "concave", // Use convex hull for better fitting collider; options are "box", "sphere", "cylinder", "hull"
-      colliderOffset: new THREE.Vector3(0, 0, 0), // move box independently
-    },
-  );
+  for (let i = 0; i < modelNames.length; i++) {
+    const pathToModel = `/models/${modelNames[i]}`;
+    const modelPosition = positions[i]; // Use predefined position
+    const scale = scales[i]; // Adjust based on model size and desired scale in scene
+    let mass = masses[i]; // Use predefined mass
+    const { model, mixer, activeAction, collider } = await loadModel(
+      loader,
+      pathToModel,
+      scale,
+      modelPosition,
+      scene,
+      physics,
+      {
+        mass,
+        shape: meshTypes[i], // Use convex hull for better fitting collider; options are "box", "sphere", "cylinder", "hull"
+        colliderOffset: new THREE.Vector3(0, 0, 0), // move box independently
+      },
+    );
 
-  if (model) {
-    model.visible = true;
-    // Ensure all child meshes are visible
-    model.traverse((child) => {
-      if (child.isMesh) {
-        child.visible = true;
-        if (child.material) child.material.visible = true;
-      }
+    if (model) {
+      model.visible = true;
+      // Ensure all child meshes are visible
+      model.traverse((child) => {
+        if (child.isMesh) {
+          child.visible = true;
+          if (child.material) child.material.visible = true;
+        }
+      });
+      console.log("[DEBUG] Model loaded:", model);
+    }
+
+    // Give the collider/model a name for editor selection display
+    if (collider) {
+      collider.name = modelNames[i].replace(/\.[^.]+$/, ""); // Use filename without extension
+    }
+
+    if (mixer && activeAction) {
+      activeAction.setEffectiveTimeScale(ANIMATION_PLAYBACK_RATE);
+    }
+
+    models.push({
+      name: `model_${models.length}`,
+      model,
+      mixer,
+      activeAction,
+      collider,
     });
-    console.log("[DEBUG] Model loaded:", model);
   }
-
-  // Give the collider/model a name for editor selection display
-  if (collider) {
-    collider.name = modelNames[1].replace(/\.[^.]+$/, ""); // Use filename without extension
-  }
-
-  if (mixer && activeAction) {
-    activeAction.setEffectiveTimeScale(ANIMATION_PLAYBACK_RATE);
-  }
-
-  models.push({
-    name: `model_${models.length}`,
-    model,
-    mixer,
-    activeAction,
-    collider,
-  });
 
   // Add ambient light for general illumination (optional, can be removed if HDRI provides sufficient lighting)
   // const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Soft white light
@@ -211,35 +229,35 @@ PhysicsLoader("/ammo", async () => {
   const lightDistance = 25;
   const lightDecay = 2;
 
-  let pointLight = new THREE.PointLight(
-    lightColor,
-    lightIntensity,
-    lightDistance,
-    lightDecay,
-  );
-  pointLight.position.set(
-    modelPosition.x,
-    modelPosition.y + 7,
-    modelPosition.z,
-  );
-  pointLight.castShadow = true;
-  scene.add(pointLight);
+  // let pointLight = new THREE.PointLight(
+  //   lightColor,
+  //   lightIntensity,
+  //   lightDistance,
+  //   lightDecay,
+  // );
+  // pointLight.position.set(
+  //   modelPosition.x,
+  //   modelPosition.y + 7,
+  //   modelPosition.z,
+  // );
+  // pointLight.castShadow = true;
+  // scene.add(pointLight);
 
-  let pointLight2 = new THREE.PointLight(
-    lightColor,
-    lightIntensity + 100,
-    lightDistance,
-    lightDecay,
-  );
-  pointLight2.position.set(
-    modelPosition.x + 1,
-    modelPosition.y + 11,
-    modelPosition.z + 2,
-  );
-  pointLight2.castShadow = true;
-  scene.add(pointLight2);
-  lights.push(pointLight);
-  lights.push(pointLight2);
+  // let pointLight2 = new THREE.PointLight(
+  //   lightColor,
+  //   lightIntensity + 100,
+  //   lightDistance,
+  //   lightDecay,
+  // );
+  // pointLight2.position.set(
+  //   modelPosition.x + 1,
+  //   modelPosition.y + 11,
+  //   modelPosition.z + 2,
+  // );
+  // pointLight2.castShadow = true;
+  // scene.add(pointLight2);
+  // lights.push(pointLight);
+  // lights.push(pointLight2);
 
   // ------ MODE SYSTEM (Editor / Play) ------ //
   // Editor mode: OrbitControls for free camera movement
