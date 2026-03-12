@@ -31,9 +31,10 @@ PhysicsLoader("/ammo", async () => {
   const DEBUG_LOG_MOVEMENT = false; // Set to true to enable console logging of player movement data for debugging
 
   const physics = new AmmoPhysics(scene, {
-    maxSubSteps: 4,
+    maxSubSteps: 8,
     fixedTimeStep: 1 / 120,
   });
+
   if (DEBUG_LOG_MOVEMENT) physics.debug?.enable();
 
   // ------------------------------- //
@@ -42,7 +43,7 @@ PhysicsLoader("/ammo", async () => {
   // Set up environment textures and terrain
   const hdrPath = "textures/hdr/sky_night.hdr"; // HDRI for sky background and lighting
   // const hdrPath = ""; // HDRI for sky background and lighting
-  const texName = "rocks"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
+  const texName = "planks"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
   const texturePaths = {
     diffuseMap: `textures/floor/${texName}/${texName}_diff.jpg`,
     aoMap: `textures/floor/${texName}/${texName}_ao.jpg`,
@@ -53,27 +54,38 @@ PhysicsLoader("/ammo", async () => {
   };
 
   // Generate terrain and get height data
-  // Exaggerate terrain height for debugging
-  const planeSize = 100; // Size of terrain plane (must match createEnvironment config)
-  const { heightBounds, terrainData: terrainDataLocal } =
-    await createEnvironment(
-      scene,
-      hdrPath,
-      texturePaths,
-      {
-        textureRepeat: 1, // Tiling of floor textures
-        planeSize: planeSize, // Size of terrain
-        segments: 1, // Grid resolution
-        heightScale: 4.2, // Exaggerated vertical exaggeration for debug
-        heightBias: -5, // Lower terrain for debug
-      },
-      physics,
-    );
+  // Supports rectangular floors with width/depth
+  const floorWidth = 40; // X axis
+  const floorDepth = 30; // Z axis
+  const {
+    heightBounds,
+    terrainData: terrainDataLocal,
+    floorSize,
+  } = await createEnvironment(
+    scene,
+    hdrPath,
+    texturePaths,
+    {
+      textureRepeat: 1, // Tiling of floor textures
+      width: floorWidth, // Rectangular floor width
+      depth: floorDepth, // Rectangular floor depth
+      segments: 16, // Grid resolution
+      heightScale: 0.02, // Vertical exaggeration
+      heightBias: 0, // Lower terrain
+      // Texture rotation options:
+      // - "natural": many angles for organic textures (rocks, grass, dirt)
+      // - "aligned": 0° and 180° only for structured textures (planks, tiles)
+      // - "none": no rotation
+      // - Custom array: [0, Math.PI] or any angles in radians
+      textureRotations: "aligned",
+    },
+    physics,
+  );
 
   // Store terrain data for use in animation loop
   terrainData = heightBounds && terrainDataLocal ? terrainDataLocal : null;
 
-  const wallTexName = "damaged_plaster"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
+  const wallTexName = "corrugated_iron"; // Base name for floor textures (expects _diff, _ao, etc. suffixes)
   const wallTexturePaths = {
     diffuseMap: `textures/walls/${wallTexName}/${wallTexName}_diff.jpg`,
     // aoMap: `textures/walls/${wallTexName}/${wallTexName}_ao.jpg`,
@@ -82,25 +94,35 @@ PhysicsLoader("/ammo", async () => {
     displacementMap: `textures/walls/${wallTexName}/${wallTexName}_disp.jpg`,
     // roughnessMap: `textures/walls/${wallTexName}/${wallTexName}_rough.jpg`,
   };
-  // build room walls/ceiling; returns data used later for lights
+  // build room walls/ceiling; supports rectangular rooms and selective wall creation
   // note: playerCollider not yet available, so collision group update will be
   // handled after the collider is created.
-  // const { ceilingSize, ceilingY, wallThickness } = await createRoomWalls({
-  //   scene,
-  //   physics,
-  //   planeSize,
-  //   wallHeight: 5,
-  //   wallThickness: 0.5,
-  //   textureRepeat: 3,
-  //   wallTextures: wallTexturePaths,
-  //   ceilingTextures: {},
-  // });
+  const { roomSize, ceilingY, wallThickness } = await createRoomWalls({
+    scene,
+    physics,
+    width: floorSize.width, // Use actual floor dimensions
+    depth: floorSize.depth,
+    wallHeight: 5,
+    wallThickness: 0.5,
+    segments: 10, // Number of segments for wall geometry
+    textureRepeat: 10,
+    wallTextures: wallTexturePaths,
+    ceilingTextures: {},
+    // Select which walls to create (all enabled by default)
+    walls: {
+      north: true, // Back wall (-Z)
+      south: true, // Front wall (+Z)
+      east: true, // Right wall (+X)
+      west: true, // Left wall (-X)
+    },
+    ceiling: false, // Toggle roof on/off
+  });
 
   // // optional helper to create a ceiling grid of spotlights (n×n):
+  // // Note: ceilingSize format changed - now use roomSize.width/depth
   // let ceilingLights = [];
-
   // ceilingLights = createCeilingLights(scene, {
-  //   ceilingSize,
+  //   ceilingSize: [roomSize.width, wallThickness, roomSize.depth],
   //   ceilingY,
   //   wallThickness,
   //   numLightsPerSide: 4,
@@ -147,7 +169,6 @@ PhysicsLoader("/ammo", async () => {
     },
     spawnPosition: playerSpawn,
   });
-
   // ------------------------------- //
   // - MODE SYSTEM (Editor / Play) - //
   // ------------------------------- //
@@ -160,86 +181,96 @@ PhysicsLoader("/ammo", async () => {
     playerHeight,
     playerSpawn,
   });
-  
   // ------------------------------- //
   // -------- MODEL SETUP ---------- //
   // ------------------------------- //
-  // Load animated models and add to scene
-  const models = [];
-  const loader = new GLTFLoader();
-
-  const modelNames = [
-    "hut.glb",
-    "house.glb",
-    "cat_statue/concrete_cat_statue_4k.gltf",
-    "chair/mid_century_lounge_chair_1k.gltf",
-    "jacaranda/jacaranda_tree_1k.gltf",
-    "fountain.glb",
-  ];
-
-  const scales = [18, 18, 8, 1, 10, 8]; // Adjust scales for each model as needed
-  const masses = [0, 0, 10, 10, 0, 0]; // Static by default; adjust if you want physics interaction
-  const meshTypes = ["concave", "concave", "convex", "hull", "hull", "concave"]; // Types of meshes to include in colliders
-
-  const positions = [
-    new THREE.Vector3(0, -2.9, 0), // hut
-    new THREE.Vector3(-20, -4.9, 0), // house
-    new THREE.Vector3(-40, -1.9, 0), // cat statue
-    new THREE.Vector3(-20, 2.9, -1), // chair
-    new THREE.Vector3(-35, -2, -1), // tree
-    new THREE.Vector3(20, -4.5, 0), // fountain
-  ];
-
+  // Consolidated model configuration - easier to maintain
   const ANIMATION_PLAYBACK_RATE = 0.5; // 1 = source speed, <1 = slower
+  const modelConfigs = [
+    // {
+    //   path: "house.glb",
+    //   scale: 18,
+    //   mass: 0,
+    //   shape: "concave",
+    //   position: [-20, -4.9, 0],
+    // },
+    {
+      path: "cat_statue/concrete_cat_statue_4k.gltf",
+      scale: 8,
+      mass: 0,
+      shape: "concave",
+      position: [0, 0, 0],
+    },
+    {
+      path: "chair/mid_century_lounge_chair_1k.gltf",
+      scale: 1,
+      mass: 10,
+      shape: "hull",
+      position: [-20, 2.9, -1],
+    },
+    // {
+    //   path: "jacaranda/jacaranda_tree_1k.gltf",
+    //   scale: 10,
+    //   mass: 0,
+    //   shape: "box",
+    //   position: [-35, -2, -1],
+    // },
+    // {
+    //   path: "fountain.glb",
+    //   scale: 8,
+    //   mass: 0,
+    //   shape: "concave",
+    //   position: [20, -4.5, 0],
+    // },
+  ];
 
-  for (let i = 0; i < modelNames.length; i++) {
-    const pathToModel = `/models/${modelNames[i]}`;
-    const modelPosition = positions[i]; // Use predefined position
-    const scale = scales[i]; // Adjust based on model size and desired scale in scene
-    let mass = masses[i]; // Use predefined mass
-    const { model, mixer, activeAction, collider } = await loadModel(
+  // Load all models in parallel for faster startup
+  const loader = new GLTFLoader();
+  const modelPromises = modelConfigs.map((config) =>
+    loadModel(
       loader,
-      pathToModel,
-      scale,
-      modelPosition,
+      `/models/${config.path}`,
+      config.scale,
+      new THREE.Vector3(...config.position),
       scene,
       physics,
       {
-        mass,
-        shape: meshTypes[i], // Use convex hull for better fitting collider; options are "box", "sphere", "cylinder", "hull"
-        colliderOffset: new THREE.Vector3(0, 0, 0), // move box independently
+        mass: config.mass,
+        shape: config.shape,
+        colliderOffset: new THREE.Vector3(0, 0, 0),
       },
-    );
+    ).then((result) => ({ ...result, config })),
+  );
+
+  const loadedModels = await Promise.all(modelPromises);
+
+  // Process loaded models
+  const models = loadedModels.map((result, index) => {
+    const { model, mixer, activeAction, collider, config } = result;
 
     if (model) {
       model.visible = true;
-      // Ensure all child meshes are visible
       model.traverse((child) => {
         if (child.isMesh) {
           child.visible = true;
           if (child.material) child.material.visible = true;
         }
       });
-      console.log("[DEBUG] Model loaded:", model);
     }
 
     // Give the collider/model a name for editor selection display
     if (collider) {
-      collider.name = modelNames[i].replace(/\.[^.]+$/, ""); // Use filename without extension
+      collider.name = config.path.replace(/\.[^.]+$/, "").replace(/\/.*$/, "");
     }
 
     if (mixer && activeAction) {
       activeAction.setEffectiveTimeScale(ANIMATION_PLAYBACK_RATE);
     }
 
-    models.push({
-      name: `model_${models.length}`,
-      model,
-      mixer,
-      activeAction,
-      collider,
-    });
-  }
+    return { name: `model_${index}`, model, mixer, activeAction, collider };
+  });
+
+  console.log(`[Engine] Loaded ${models.length} models in parallel`);
 
   // ------------------------------- //
   // ------ LIGHT SETUP ------ //
@@ -308,16 +339,17 @@ PhysicsLoader("/ammo", async () => {
         updatePlayer(delta);
       }
 
-      // Custom code: Example of dynamic light intensity based on player proximity to the model
-      // update lights based on proximity
-      if (playerCollider) {
-        const lightActivationDistance = 4; // adjust to taste
-        for (const light of lights) {
-          const distanceToPlayer = light.position.distanceTo(
-            playerCollider.position,
-          );
-          light.intensity =
-            distanceToPlayer < lightActivationDistance ? 100 : 0;
+      // Optimized light proximity check using squared distance (avoids sqrt)
+      if (playerCollider && lights.length > 0) {
+        const lightActivationDistanceSq = 16; // 4^2 - compare squared to avoid sqrt
+        const px = playerCollider.position.x;
+        const pz = playerCollider.position.z;
+        for (let i = 0; i < lights.length; i++) {
+          const light = lights[i];
+          const dx = light.position.x - px;
+          const dz = light.position.z - pz;
+          const distSq = dx * dx + dz * dz;
+          light.intensity = distSq < lightActivationDistanceSq ? 100 : 0;
         }
       }
 
@@ -331,4 +363,4 @@ PhysicsLoader("/ammo", async () => {
     // Essential component: Render the scene
     renderer.render(scene, camera);
   }
-};);
+});

@@ -74,23 +74,58 @@ async function buildMaterial(textureConfig = {}, repeat = 1) {
   return new THREE.MeshStandardMaterial(materialParams);
 }
 
-// public API: create room walls + ceiling around a square floor
+/**
+ * Create room walls and optional ceiling around a rectangular floor.
+ *
+ * @param {Object} options
+ * @param {THREE.Scene} options.scene - The scene to add walls to
+ * @param {Object} options.physics - Physics instance
+ * @param {number} [options.planeSize] - Square floor size (legacy, use width/depth instead)
+ * @param {number} [options.width] - Floor width (X axis)
+ * @param {number} [options.depth] - Floor depth (Z axis)
+ * @param {number} [options.wallHeight=5] - Height of walls
+ * @param {number} [options.wallThickness=0.5] - Thickness of walls
+ * @param {number} [options.segments=1] - Number of segments for wall geometry
+ * @param {number} [options.textureRepeat=1] - Texture repeat factor
+ * @param {Object} [options.wallTextures={}] - Texture paths for walls
+ * @param {Object} [options.ceilingTextures={}] - Texture paths for ceiling
+ * @param {Object} [options.walls] - Which walls to create: { north, south, east, west }
+ * @param {boolean} [options.ceiling=true] - Whether to create ceiling/roof
+ * @param {Object} [options.playerCollider] - Optional player collider to set collision masks
+ * @returns {Object} Room data including dimensions and created elements
+ */
 export async function createRoomWalls({
   scene,
   physics,
+  // Support both legacy planeSize and new width/depth
   planeSize,
+  width: inputWidth,
+  depth: inputDepth,
   wallHeight = 5,
   wallThickness = 0.5,
+  segments = 1,
   textureRepeat = 1,
   wallTextures = {},
   ceilingTextures = {},
+  // Wall configuration: true = create, false = skip
+  // Default: all walls enabled
+  walls = { north: true, south: true, east: true, west: true },
+  // Ceiling/roof toggle
+  ceiling = true,
   playerCollider = null,
 } = {}) {
-  if (!scene || !physics || typeof planeSize !== "number") {
-    throw new Error("createRoomWalls requires scene, physics and planeSize");
+  // Resolve dimensions
+  const roomWidth = inputWidth ?? planeSize;
+  const roomDepth = inputDepth ?? planeSize;
+
+  if (!scene || !physics || !roomWidth || !roomDepth) {
+    throw new Error(
+      "createRoomWalls requires scene, physics, and dimensions (width/depth or planeSize)",
+    );
   }
 
-  const halfSize = planeSize / 2;
+  const halfWidth = roomWidth / 2;
+  const halfDepth = roomDepth / 2;
 
   // build materials (may be slow, so we await)
   const wallMaterial = await buildMaterial(wallTextures, textureRepeat);
@@ -100,27 +135,59 @@ export async function createRoomWalls({
   const COLLISION_GROUP_PLAYER = 1 << 0;
   const COLLISION_GROUP_WALL = 1 << 1;
 
-  const wallPositions = [
-    { x: 0, y: wallHeight / 2, z: -halfSize - wallThickness / 2 }, // Back
-    { x: 0, y: wallHeight / 2, z: halfSize + wallThickness / 2 }, // Front
-    { x: -halfSize - wallThickness / 2, y: wallHeight / 2, z: 0 }, // Left
-    { x: halfSize + wallThickness / 2, y: wallHeight / 2, z: 0 }, // Right
+  // Track created walls for return value
+  const createdWalls = [];
+
+  // Wall definitions: position, size, and which config key enables it
+  const wallConfigs = [
+    {
+      key: "north",
+      position: { x: 0, y: wallHeight / 2, z: -halfDepth - wallThickness / 2 },
+      size: [roomWidth + wallThickness * 2, wallHeight, wallThickness],
+    },
+    {
+      key: "south",
+      position: { x: 0, y: wallHeight / 2, z: halfDepth + wallThickness / 2 },
+      size: [roomWidth + wallThickness * 2, wallHeight, wallThickness],
+    },
+    {
+      key: "west",
+      position: { x: -halfWidth - wallThickness / 2, y: wallHeight / 2, z: 0 },
+      size: [wallThickness, wallHeight, roomDepth + wallThickness * 2],
+    },
+    {
+      key: "east",
+      position: { x: halfWidth + wallThickness / 2, y: wallHeight / 2, z: 0 },
+      size: [wallThickness, wallHeight, roomDepth + wallThickness * 2],
+    },
   ];
 
-  wallPositions.forEach(({ x, y, z }) => {
-    const isSideWall = Math.abs(x) > 0;
-    let size;
-    if (isSideWall) {
-      size = [wallThickness, wallHeight, halfSize * 2 + wallThickness * 2];
-    } else {
-      size = [halfSize * 2 + wallThickness * 2, wallHeight, wallThickness];
-    }
+  // Create enabled walls
+  for (const config of wallConfigs) {
+    // Check if this wall is enabled (default to true if not specified)
+    const isEnabled = walls[config.key] !== false;
+    if (!isEnabled) continue;
+
+    const { position, size } = config;
+    // Calculate segments based on wall dimensions
+    const isNorthSouth = config.key === "north" || config.key === "south";
+    const widthSegs = isNorthSouth ? segments : 1;
+    const heightSegs = segments;
+    const depthSegs = isNorthSouth ? 1 : segments;
 
     const wallMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(...size),
+      new THREE.BoxGeometry(
+        size[0],
+        size[1],
+        size[2],
+        widthSegs,
+        heightSegs,
+        depthSegs,
+      ),
       wallMaterial,
     );
-    wallMesh.position.set(x, y, z);
+    wallMesh.position.set(position.x, position.y, position.z);
+    wallMesh.name = `wall_${config.key}`;
     scene.add(wallMesh);
 
     physics.add.existing(wallMesh, {
@@ -132,31 +199,45 @@ export async function createRoomWalls({
       collisionGroup: COLLISION_GROUP_WALL,
       collisionMask: COLLISION_GROUP_PLAYER | COLLISION_GROUP_WALL,
     });
-  });
 
-  // ceiling
+    createdWalls.push({ key: config.key, mesh: wallMesh });
+  }
+
+  // Ceiling (optional)
   const ceilingY = wallHeight + wallThickness / 2;
   const ceilingSize = [
-    halfSize * 2 + wallThickness * 2,
+    roomWidth + wallThickness * 2,
     wallThickness,
-    halfSize * 2 + wallThickness * 2,
+    roomDepth + wallThickness * 2,
   ];
 
-  const ceilingMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(...ceilingSize),
-    ceilingMaterial,
-  );
-  ceilingMesh.position.set(0, ceilingY, 0);
-  scene.add(ceilingMesh);
-  physics.add.existing(ceilingMesh, {
-    mass: 0,
-    shape: "box",
-    width: ceilingSize[0],
-    height: ceilingSize[1],
-    depth: ceilingSize[2],
-    collisionGroup: COLLISION_GROUP_WALL,
-    collisionMask: COLLISION_GROUP_PLAYER | COLLISION_GROUP_WALL,
-  });
+  let ceilingMesh = null;
+  if (ceiling) {
+    ceilingMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        ceilingSize[0],
+        ceilingSize[1],
+        ceilingSize[2],
+        segments,
+        1,
+        segments,
+      ),
+      ceilingMaterial,
+    );
+    ceilingMesh.position.set(0, ceilingY, 0);
+    ceilingMesh.name = "ceiling";
+    scene.add(ceilingMesh);
+
+    physics.add.existing(ceilingMesh, {
+      mass: 0,
+      shape: "box",
+      width: ceilingSize[0],
+      height: ceilingSize[1],
+      depth: ceilingSize[2],
+      collisionGroup: COLLISION_GROUP_WALL,
+      collisionMask: COLLISION_GROUP_PLAYER | COLLISION_GROUP_WALL,
+    });
+  }
 
   // if caller supplied the player collider update its collision flags
   if (
@@ -172,9 +253,15 @@ export async function createRoomWalls({
   }
 
   return {
+    // Dimensions
+    roomSize: { width: roomWidth, depth: roomDepth },
     ceilingSize,
     ceilingY,
     wallThickness,
     wallHeight,
+    // Created elements
+    walls: createdWalls,
+    ceiling: ceilingMesh,
+    hasCeiling: ceiling,
   };
 }

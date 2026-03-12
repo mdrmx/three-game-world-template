@@ -125,6 +125,8 @@ export function createModeSystem({
     window.__disablePointerLock = false; // Allow pointer lock in play mode
     orbitControls.enabled = false;
     objectPicker.setEnabled(false); // Disable object selection
+    objectPicker.clearSelection(); // Clear any selection from editor mode
+    selectedObject = null; // Reset local reference
     selectionInfo.style.display = "none"; // Hide selection info
     // Show pointer lock hint
     const hint = document.getElementById("pointer-lock-hint");

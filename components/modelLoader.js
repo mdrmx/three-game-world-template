@@ -162,6 +162,12 @@ export async function loadModel(
           );
         }
 
+        // Freeze static bodies (mass=0) to improve physics performance
+        if (mass === 0 && wrapper.body?.ammo) {
+          // DISABLE_SIMULATION = 4, prevents physics from updating this body
+          wrapper.body.ammo.setActivationState(4);
+        }
+
         collider = wrapper;
       } else {
         // Place model at requested world position plus any modelOffset

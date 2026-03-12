@@ -250,6 +250,11 @@ export async function createPlayer({
     dynamicCapsule: playerCollider,
   });
 
+  // Reusable vectors to avoid allocations in update loop (GC optimization)
+  const _forward = new THREE.Vector3();
+  const _right = new THREE.Vector3();
+  const _velocity = new THREE.Vector3();
+
   // update() will be called every frame by the caller; it drives physics based
   // movement, jumping, and keeps the camera/controller synced with the capsule.
   function update(delta) {
@@ -262,25 +267,23 @@ export async function createPlayer({
       return;
     }
 
-    // movement vectors relative to camera orientation
-    const forward = new THREE.Vector3();
-    camera.getWorldDirection(forward);
-    forward.y = 0;
-    forward.normalize();
-    const right = new THREE.Vector3();
-    right.crossVectors(forward, camera.up).normalize();
+    // movement vectors relative to camera orientation (reusing pre-allocated vectors)
+    camera.getWorldDirection(_forward);
+    _forward.y = 0;
+    _forward.normalize();
+    _right.crossVectors(_forward, camera.up).normalize();
 
-    // desired horizontal velocity
-    let velocity = new THREE.Vector3();
+    // desired horizontal velocity (reusing pre-allocated vector)
+    _velocity.set(0, 0, 0);
     const walkSpeed = player?.config?.walkAcceleration;
     const sprintSpeed = player?.config?.sprintAcceleration;
     const speed = movement.sprint ? sprintSpeed : walkSpeed;
-    if (movement.forward) velocity.add(forward);
-    if (movement.backward) velocity.sub(forward);
-    if (movement.left) velocity.sub(right);
-    if (movement.right) velocity.add(right);
-    if (velocity.lengthSq() > 0 && typeof speed === "number")
-      velocity.normalize().multiplyScalar(speed);
+    if (movement.forward) _velocity.add(_forward);
+    if (movement.backward) _velocity.sub(_forward);
+    if (movement.left) _velocity.sub(_right);
+    if (movement.right) _velocity.add(_right);
+    if (_velocity.lengthSq() > 0 && typeof speed === "number")
+      _velocity.normalize().multiplyScalar(speed);
 
     const body = playerCollider.body;
     if (body) {
@@ -311,14 +314,14 @@ export async function createPlayer({
       }
 
       const currentVel = body.velocity;
-      body.setVelocity(velocity.x, currentVel.y, velocity.z);
+      body.setVelocity(_velocity.x, currentVel.y, _velocity.z);
       const now = performance.now();
       const isGroundedNow = Math.abs(currentVel.y) < 1.0;
       if (isGroundedNow) lastGroundedAt = now;
       const canJumpNow = now - lastGroundedAt < 120;
       if (movement.jump && canJumpNow) {
         // use the configured jump speed so caller can adjust gravity
-        body.setVelocity(velocity.x, JUMP_SPEED, velocity.z);
+        body.setVelocity(_velocity.x, JUMP_SPEED, _velocity.z);
         movement.jump = false;
         lastGroundedAt = 0;
       }

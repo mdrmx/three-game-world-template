@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { ExtendedMesh } from "enable3d";
 import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 
-const TILE_SIZE = 100; // Each tile is 20x20 units
+const TILE_SIZE = 3; // Each tile is 20x20 units
 
 export async function createEnvironment(
   scene,
@@ -37,13 +37,47 @@ export async function createEnvironment(
     roughnessMap,
   } = textureConfig || {};
 
+  // Support both planeSize (square) and width/depth (rectangular)
   const {
     textureRepeat = 2,
-    planeSize = 500,
+    planeSize,
+    width: inputWidth,
+    depth: inputDepth,
     segments = 8,
     heightScale = 10,
     heightBias = -5,
+    // Texture rotation options:
+    // - Array of angles in radians: [0, Math.PI/2, Math.PI, ...]
+    // - "natural": many rotations for organic textures (rocks, grass)
+    // - "aligned": 0° and 180° only for structured textures (planks, tiles)
+    // - "none": no rotation
+    textureRotations = "aligned",
   } = options || {};
+
+  // Resolve dimensions: width/depth take priority over planeSize
+  const floorWidth = inputWidth ?? planeSize ?? 500;
+  const floorDepth = inputDepth ?? planeSize ?? 500;
+
+  // Resolve texture rotations
+  const ROTATION_PRESETS = {
+    natural: [
+      0,
+      Math.PI / 4,
+      Math.PI / 2,
+      (3 * Math.PI) / 4,
+      Math.PI,
+      (5 * Math.PI) / 4,
+      (3 * Math.PI) / 2,
+      (7 * Math.PI) / 4,
+    ],
+    aligned: [0, Math.PI], // 0° and 180° only - keeps patterns aligned
+    none: [0],
+  };
+
+  const rotations =
+    Array.isArray(textureRotations) ? textureRotations : (
+      (ROTATION_PRESETS[textureRotations] ?? ROTATION_PRESETS.natural)
+    );
 
   // How many times to repeat the floor textures per tile
   const repeat = textureRepeat;
@@ -79,10 +113,13 @@ export async function createEnvironment(
     loadTextureBase(roughnessMap),
   ]);
 
-  // Calculate number of tiles needed
-  const tilesPerSide = Math.ceil(planeSize / TILE_SIZE);
-  const actualSize = tilesPerSide * TILE_SIZE;
-  const halfSize = actualSize / 2;
+  // Calculate number of tiles needed for each axis
+  const tilesX = Math.ceil(floorWidth / TILE_SIZE);
+  const tilesZ = Math.ceil(floorDepth / TILE_SIZE);
+  const actualWidth = tilesX * TILE_SIZE;
+  const actualDepth = tilesZ * TILE_SIZE;
+  const halfWidth = actualWidth / 2;
+  const halfDepth = actualDepth / 2;
 
   // Container for all tiles
   const floorGroup = new THREE.Group();
@@ -94,25 +131,15 @@ export async function createEnvironment(
   let globalMaxHeight = -Infinity;
 
   // Build a global height grid for terrain sampling
-  const globalCols = tilesPerSide * segments + 1;
-  const globalRows = tilesPerSide * segments + 1;
+  const globalCols = tilesX * segments + 1;
+  const globalRows = tilesZ * segments + 1;
   const globalGrid = Array.from({ length: globalRows }, () =>
     new Array(globalCols).fill(0),
   );
 
-  // Possible rotations for texture variation (0, 90, 180, 270 degrees)
-  const rotations = [
-    0,
-    Math.PI / 2,
-    Math.PI,
-    (3 * Math.PI) / 2,
-    (4 * Math.PI) / 2,
-    (3 * Math.PI) / 4,
-  ];
-
   // Create tiles
-  for (let tileZ = 0; tileZ < tilesPerSide; tileZ++) {
-    for (let tileX = 0; tileX < tilesPerSide; tileX++) {
+  for (let tileZ = 0; tileZ < tilesZ; tileZ++) {
+    for (let tileX = 0; tileX < tilesX; tileX++) {
       // Random rotation for this tile's texture
       const textureRotation =
         rotations[Math.floor(Math.random() * rotations.length)];
@@ -213,8 +240,8 @@ export async function createEnvironment(
       const tileMesh = new ExtendedMesh(tileGeometry, tileMaterial);
 
       // Position tile: center the grid around origin
-      const posX = tileX * TILE_SIZE - halfSize + TILE_SIZE / 2;
-      const posZ = tileZ * TILE_SIZE - halfSize + TILE_SIZE / 2;
+      const posX = tileX * TILE_SIZE - halfWidth + TILE_SIZE / 2;
+      const posZ = tileZ * TILE_SIZE - halfDepth + TILE_SIZE / 2;
       tileMesh.position.set(posX, 0, posZ);
       tileMesh.rotation.set(-Math.PI / 2, 0, 0);
 
@@ -265,15 +292,21 @@ export async function createEnvironment(
     grid: globalGrid,
     rows: globalRows,
     cols: globalCols,
-    cellSizeX: actualSize / Math.max(globalCols - 1, 1),
-    cellSizeZ: actualSize / Math.max(globalRows - 1, 1),
-    halfWidth: halfSize,
-    halfHeight: halfSize,
+    cellSizeX: actualWidth / Math.max(globalCols - 1, 1),
+    cellSizeZ: actualDepth / Math.max(globalRows - 1, 1),
+    halfWidth: halfWidth,
+    halfHeight: halfDepth,
     min: heightBounds.min,
     max: heightBounds.max,
   };
 
-  return { floor: floorGroup, heightBounds, terrainData };
+  return {
+    floor: floorGroup,
+    heightBounds,
+    terrainData,
+    // Export actual dimensions for use by walls/other systems
+    floorSize: { width: actualWidth, depth: actualDepth },
+  };
 }
 
 // Extracts height data from a displacement texture and geometry

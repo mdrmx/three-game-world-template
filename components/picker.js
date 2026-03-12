@@ -28,6 +28,10 @@ export function picker(renderer, scene, camera, options = {}) {
   // allow temporarily disabling the picker (e.g. during fpv mode)
   let enabled = true;
 
+  // Throttle raycasting to reduce CPU usage (50ms = ~20 raycasts/sec max)
+  let lastPickTime = 0;
+  const PICK_INTERVAL = options.pickInterval ?? 50;
+
   // filter function to determine if an object is selectable
   // by default, exclude objects marked with userData.selectable = false
   const selectableFilter =
@@ -118,8 +122,12 @@ export function picker(renderer, scene, camera, options = {}) {
     return obj;
   }
 
-  function update() {
+  function update(time) {
     if (!enabled) return;
+    // Throttle raycasting for performance
+    const now = time ?? performance.now();
+    if (now - lastPickTime < PICK_INTERVAL) return;
+    lastPickTime = now;
     pick(pickPosition);
   }
 
@@ -297,5 +305,25 @@ export function picker(renderer, scene, camera, options = {}) {
     return enabled;
   }
 
-  return { update, onHover, onClick, onSelect, dispose, setEnabled, isEnabled };
+  // Clear current selection (deselect any selected object)
+  function clearSelection() {
+    if (selectedHighlightMesh) {
+      selectedHighlightMesh.material.emissive.setHex(selectedObjectSavedColor);
+    }
+    selectedObject = null;
+    selectedHighlightMesh = null;
+    selectedObjectSavedColor = 0;
+    notifySelection(null);
+  }
+
+  return {
+    update,
+    onHover,
+    onClick,
+    onSelect,
+    dispose,
+    setEnabled,
+    isEnabled,
+    clearSelection,
+  };
 }
