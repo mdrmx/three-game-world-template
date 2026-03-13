@@ -55,8 +55,8 @@ PhysicsLoader("/ammo", async () => {
 
   // Generate terrain and get height data
   // Supports rectangular floors with width/depth
-  const floorWidth = 40; // X axis
-  const floorDepth = 30; // Z axis
+  const floorWidth = 20; // X axis
+  const floorDepth = 10; // Z axis
   const {
     heightBounds,
     terrainData: terrainDataLocal,
@@ -110,10 +110,10 @@ PhysicsLoader("/ammo", async () => {
     ceilingTextures: {},
     // Select which walls to create (all enabled by default)
     walls: {
-      north: true, // Back wall (-Z)
+      north: false, // Back wall (-Z)
       south: true, // Front wall (+Z)
       east: true, // Right wall (+X)
-      west: true, // Left wall (-X)
+      west: false, // Left wall (-X)
     },
     ceiling: false, // Toggle roof on/off
   });
@@ -138,7 +138,7 @@ PhysicsLoader("/ammo", async () => {
   // ------------------------------- //
   // specify a spawn point if you want to start somewhere other than the
   // origin; y is optional and computed from the terrain if omitted.
-  const playerSpawn = { x: -20, z: 0, y: 3 };
+  const playerSpawn = { x: 0, z: 0, y: 3 };
   const playerCapsuleRadius = 0.2; // <--- modify this value as needed
   // Set your desired speeds here:
   const walkAcceleration = 4; // Change this value for walk speed
@@ -193,13 +193,13 @@ PhysicsLoader("/ammo", async () => {
       scale: 4,
       mass: 1,
       shape: "hull",
-      position: [10, 0, 0],
+      position: [7, 0, 0],
     },
     {
       path: "cat_statue/concrete_cat_statue_4k.gltf",
-      scale: 8,
-      mass: 0,
-      shape: "concave",
+      scale: 2,
+      mass: 1000,
+      shape: "box",
       position: [0, 0, 0],
     },
     {
@@ -207,14 +207,14 @@ PhysicsLoader("/ammo", async () => {
       scale: 1,
       mass: 10,
       shape: "hull",
-      position: [-20, 2.9, -1],
+      position: [-7, 0, 0],
     },
     // {
-    //   path: "jacaranda/jacaranda_tree_1k.gltf",
+    //   path: "animated_triceratops_skeleton.glb",
     //   scale: 10,
     //   mass: 0,
     //   shape: "box",
-    //   position: [-35, -2, -1],
+    //   position: [-15, 0, -1],
     // },
     // {
     //   path: "fountain.glb",
@@ -247,7 +247,7 @@ PhysicsLoader("/ammo", async () => {
 
   // Process loaded models
   const models = loadedModels.map((result, index) => {
-    const { model, mixer, activeAction, collider, config } = result;
+    const { model, mixer, activeAction, collider, config, clips } = result;
 
     if (model) {
       model.visible = true;
@@ -268,10 +268,19 @@ PhysicsLoader("/ammo", async () => {
       activeAction.setEffectiveTimeScale(ANIMATION_PLAYBACK_RATE);
     }
 
-    return { name: `model_${index}`, model, mixer, activeAction, collider };
+    return {
+      name: `model_${index}`,
+      model,
+      mixer,
+      activeAction,
+      collider,
+      clips,
+      config,
+      currentClipIndex: 0, // Track which animation is playing
+    };
   });
 
-  console.log(`[Engine] Loaded ${models.length} models in parallel`);
+  console.log(`[Engine] Loaded ${models.length} models in parallel`, models);
 
   // ------------------------------- //
   // ------ LIGHT SETUP ------ //
@@ -341,18 +350,18 @@ PhysicsLoader("/ammo", async () => {
       }
 
       // Optimized light proximity check using squared distance (avoids sqrt)
-      if (playerCollider && lights.length > 0) {
-        const lightActivationDistanceSq = 16; // 4^2 - compare squared to avoid sqrt
-        const px = playerCollider.position.x;
-        const pz = playerCollider.position.z;
-        for (let i = 0; i < lights.length; i++) {
-          const light = lights[i];
-          const dx = light.position.x - px;
-          const dz = light.position.z - pz;
-          const distSq = dx * dx + dz * dz;
-          light.intensity = distSq < lightActivationDistanceSq ? 100 : 0;
-        }
-      }
+      // if (playerCollider && lights.length > 0) {
+      //   const lightActivationDistanceSq = 16; // 4^2 - compare squared to avoid sqrt
+      //   const px = playerCollider.position.x;
+      //   const pz = playerCollider.position.z;
+      //   for (let i = 0; i < lights.length; i++) {
+      //     const light = lights[i];
+      //     const dx = light.position.x - px;
+      //     const dz = light.position.z - pz;
+      //     const distSq = dx * dx + dz * dz;
+      //     light.intensity = distSq < lightActivationDistanceSq ? 100 : 0;
+      //   }
+      // }
 
       // Essential component:Update physics
       // Clamp delta to prevent physics instability on frame drops

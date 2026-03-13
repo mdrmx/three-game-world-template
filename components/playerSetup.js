@@ -288,7 +288,7 @@ export async function createPlayer({
     const body = playerCollider.body;
     if (body) {
       // Safety check: teleport player back up if they fell through the ground
-      const minY = (heightBounds?.min ?? -10) - 5;
+      const minY = (heightBounds?.min ?? -10) - 30;
       if (playerCollider.position.y < minY) {
         console.warn("[Player] Fell through ground, resetting position");
         body.setVelocity(0, 0, 0);

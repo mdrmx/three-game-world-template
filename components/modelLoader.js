@@ -191,7 +191,7 @@ export async function loadModel(
         activeAction.play();
       }
 
-      resolve({ model, mixer, activeAction, collider });
+      resolve({ model, mixer, activeAction, collider, clips: gltf.animations });
     });
   });
 }
